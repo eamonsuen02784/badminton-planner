@@ -118,18 +118,18 @@
 
     // ─── Algorithm ───────────────────────────────────────────────────────────────
 
-    function generateSchedule(players, totalSlots, numCourts) {
+    function generateSchedule(players, totalSlots, numCourts, startFrom = 0, initialState = null) {
       const n = players.length;
       if (n < 4) return null;
 
-      const schedule = [];
-      const gamesPlayed = new Array(n).fill(0);
-      const consecutivePlayed = new Array(n).fill(0);
-      const consecutiveRested = new Array(n).fill(0);
-      const partnerCount = Array.from({ length: n }, () => new Array(n).fill(0));
-      const opponentCount = Array.from({ length: n }, () => new Array(n).fill(0));
+      const schedule = initialState ? [...initialState.keptSlots] : [];
+      const gamesPlayed = initialState ? [...initialState.gamesPlayed] : new Array(n).fill(0);
+      const consecutivePlayed = initialState ? [...initialState.consecutivePlayed] : new Array(n).fill(0);
+      const consecutiveRested = initialState ? [...initialState.consecutiveRested] : new Array(n).fill(0);
+      const partnerCount = initialState ? initialState.partnerCount.map(r => [...r]) : Array.from({ length: n }, () => new Array(n).fill(0));
+      const opponentCount = initialState ? initialState.opponentCount.map(r => [...r]) : Array.from({ length: n }, () => new Array(n).fill(0));
 
-      for (let slot = 0; slot < totalSlots; slot++) {
+      for (let slot = startFrom; slot < totalSlots; slot++) {
         const available = [];
         for (let i = 0; i < n; i++) {
           if (slot >= players[i].availFrom && slot <= players[i].availTo) available.push(i);
@@ -236,6 +236,41 @@
       return { schedule, gamesPlayed };
     }
 
+    function extractState(keptSlots, players) {
+      const n = players.length;
+      const gamesPlayed = new Array(n).fill(0);
+      const consecutivePlayed = new Array(n).fill(0);
+      const consecutiveRested = new Array(n).fill(0);
+      const partnerCount = Array.from({ length: n }, () => new Array(n).fill(0));
+      const opponentCount = Array.from({ length: n }, () => new Array(n).fill(0));
+
+      if (keptSlots.length > 0) {
+        // Restore per-player counters from last played slot's playerState
+        const lastState = keptSlots[keptSlots.length - 1].playerState;
+        lastState.forEach(ps => {
+          const i = players.findIndex(p => p.name === ps.name);
+          if (i >= 0) {
+            gamesPlayed[i] = ps.total;
+            consecutivePlayed[i] = ps.conPlayed;
+            consecutiveRested[i] = ps.conRested;
+          }
+        });
+        // Replay courts to reconstruct partner/opponent history
+        keptSlots.forEach(s => {
+          s.courts.forEach(court => {
+            const tA = court.teamA.map(p => players.findIndex(pl => pl.name === p.name));
+            const tB = court.teamB.map(p => players.findIndex(pl => pl.name === p.name));
+            if (tA.every(x => x >= 0) && tB.every(x => x >= 0)) {
+              partnerCount[tA[0]][tA[1]]++; partnerCount[tA[1]][tA[0]]++;
+              partnerCount[tB[0]][tB[1]]++; partnerCount[tB[1]][tB[0]]++;
+              for (const a of tA) for (const b of tB) { opponentCount[a][b]++; opponentCount[b][a]++; }
+            }
+          });
+        });
+      }
+      return { keptSlots, gamesPlayed, consecutivePlayed, consecutiveRested, partnerCount, opponentCount };
+    }
+
     // ─── Colors ──────────────────────────────────────────────────────────────────
 
     const C = {
@@ -293,6 +328,7 @@
       const [result, setResult] = useState(() => loadState("bp-result", null));
       const [scores, setScores] = useState(() => loadState("bp-scores", {}));
       const [winLoss, setWinLoss] = useState(() => loadState("bp-winloss", {}));
+      const [fromSlot, setFromSlot] = useState(1);
       const [copied, setCopied] = useState(false);
       const [saved, setSaved] = useState(false);
       const scheduleRef = useRef(null);
@@ -346,11 +382,11 @@
         const name = nameInput.trim();
         if (!name || players.find((p) => p.name.toLowerCase() === name.toLowerCase())) return;
         setPlayers((prev) => [...prev, { name, gender: genderInput, skill: 2, availFrom: 0, availTo: totalSlots - 1, group: "full" }]);
-        setNameInput(""); setResult(null);
+        setNameInput("");
       }, [nameInput, genderInput, players, totalSlots]);
 
       const removePlayer = useCallback((idx) => {
-        setPlayers((prev) => prev.filter((_, i) => i !== idx)); setResult(null);
+        setPlayers((prev) => prev.filter((_, i) => i !== idx));
       }, []);
 
       const updatePlayer = useCallback((idx, field, value) => {
@@ -402,9 +438,30 @@
         setCopied(false);
       }, [players, totalSlots, numCourts, getPlayersWithAvailability, computeSkill]);
 
+      const regenerateRemaining = useCallback(() => {
+        if (players.length < 4 || !result) return;
+        const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
+        const keptSlots = result.schedule.slice(0, fromSlot - 1);
+        const state = extractState(keptSlots, playersWithSkill);
+        const newResult = generateSchedule(playersWithSkill, totalSlots, numCourts, fromSlot - 1, state);
+        if (!newResult) return;
+        // Keep scores for preserved slots, clear the rest
+        setScores(prev => {
+          const next = {};
+          for (const key in prev) {
+            const m = key.match(/^s(\d+)c/);
+            if (m && parseInt(m[1]) < fromSlot) next[key] = prev[key];
+          }
+          return next;
+        });
+        setResult(newResult);
+        setCopied(false);
+      }, [players, totalSlots, numCourts, fromSlot, result, getPlayersWithAvailability, computeSkill]);
+
       const clearSchedule = useCallback(() => {
         setResult(null);
         setScores({});
+        setFromSlot(1);
       }, []);
 
       const copySchedule = useCallback(() => {
@@ -651,6 +708,33 @@
                       fontFamily: font, minWidth: 52,
                     }}><LucideIcon name="trash" size={15} /></button>
                 )}
+              </div>
+            )}
+
+            {/* Re-generate from slot (subs / injury / late arrival) */}
+            {result && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 8, marginBottom: 16,
+                background: C.card, border: `1px solid ${C.border}`, borderRadius: 8,
+                padding: "10px 14px",
+              }}>
+                <span style={{ fontSize: 12, color: C.textDim, flex: 1 }}>
+                  Player in/out? Re-generate from slot
+                </span>
+                <input type="number" min={1} max={totalSlots} value={fromSlot}
+                  onChange={e => setFromSlot(Math.min(totalSlots, Math.max(1, +e.target.value)))}
+                  style={{
+                    width: 48, background: C.bg, border: `1px solid ${C.border}`,
+                    borderRadius: 4, padding: "4px 6px", color: C.text,
+                    fontSize: 13, fontFamily: font, textAlign: "center",
+                  }} />
+                <span style={{ fontSize: 12, color: C.textDim }}>onwards</span>
+                <button onClick={regenerateRemaining}
+                  style={{
+                    background: C.accentDim, color: "#fff", border: "none",
+                    borderRadius: 6, padding: "6px 12px", fontSize: 12,
+                    fontWeight: 600, fontFamily: font,
+                  }}>Apply</button>
               </div>
             )}
 
