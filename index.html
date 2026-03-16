@@ -100,6 +100,15 @@
       return a;
     };
 
+    function isValidBadmintonScore(a, b) {
+      if (a === b || a < 0 || b < 0) return false;
+      const hi = Math.max(a, b), lo = Math.min(a, b);
+      if (hi === 21 && lo <= 19) return true;                    // normal win
+      if (hi >= 22 && lo >= 20 && hi - lo === 2) return true;   // deuce: win by 2
+      if (hi === 30 && lo === 29) return true;                   // cap: 30–29
+      return false;
+    }
+
     const loadState = (key, fallback) => {
       try {
         const raw = localStorage.getItem(key);
@@ -357,7 +366,7 @@
       const updateScore = useCallback((slot, courtIdx, aVal, bVal, teamA, teamB) => {
         const key = `s${slot}c${courtIdx}`;
         const aNum = parseInt(aVal), bNum = parseInt(bVal);
-        const valid = !isNaN(aNum) && !isNaN(bNum) && aNum >= 0 && bNum >= 0 && aNum !== bNum;
+        const valid = !isNaN(aNum) && !isNaN(bNum) && isValidBadmintonScore(aNum, bNum);
 
         setScores(prev => {
           const prevEntry = prev[key];
@@ -739,11 +748,11 @@
                             });
                             return (
                               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
-                                <input type="number" min={0} max={99} value={sc.a}
+                                <input type="number" min={0} max={30} value={sc.a}
                                   onChange={e => updateScore(s.slot, ci, e.target.value, sc.b, tA, tB)}
                                   placeholder="–" style={inputStyle(sc.applied)} />
                                 <span style={{ color: C.textMuted, fontSize: 12, fontWeight: 600 }}>–</span>
-                                <input type="number" min={0} max={99} value={sc.b}
+                                <input type="number" min={0} max={30} value={sc.b}
                                   onChange={e => updateScore(s.slot, ci, sc.a, e.target.value, tA, tB)}
                                   placeholder="–" style={inputStyle(sc.applied)} />
                                 {sc.applied && (
