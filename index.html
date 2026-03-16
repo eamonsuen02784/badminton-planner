@@ -82,11 +82,14 @@
     const DEFAULT_GAME_MINUTES = 15;
 
     const DEFAULT_PLAYERS = [
-      { name: "Eamon", gender: "M" }, { name: "Jialin", gender: "F" },
-      { name: "Mindy", gender: "F" }, { name: "Yuta", gender: "M" },
-      { name: "Jae", gender: "M" }, { name: "Jess", gender: "F" },
-      { name: "Edwin", gender: "M" }, { name: "Stanley", gender: "M" },
+      { name: "Eamon", gender: "M", skill: 2 }, { name: "Jialin", gender: "F", skill: 2 },
+      { name: "Mindy", gender: "F", skill: 2 }, { name: "Yuta", gender: "M", skill: 2 },
+      { name: "Jae", gender: "M", skill: 2 }, { name: "Jess", gender: "F", skill: 2 },
+      { name: "Edwin", gender: "M", skill: 2 }, { name: "Stanley", gender: "M", skill: 2 },
     ];
+
+    const SKILL_LABELS = { 1: "Low", 2: "Mid", 3: "High" };
+    const SKILL_COLORS = { 1: "#fbbf24", 2: "#64748b", 3: "#34d399" };
 
     // ─── Utilities ───────────────────────────────────────────────────────────────
 
@@ -190,6 +193,10 @@
             score += opponentCount[tA[1]][tB[0]] + opponentCount[tA[1]][tB[1]];
             if (players[tA[0]].gender === players[tA[1]].gender) score += 1;
             if (players[tB[0]].gender === players[tB[1]].gender) score += 1;
+            // Penalise skill-imbalanced matchups: equal team totals are ideal
+            const skillA = (players[tA[0]].skill ?? 2) + (players[tA[1]].skill ?? 2);
+            const skillB = (players[tB[0]].skill ?? 2) + (players[tB[1]].skill ?? 2);
+            score += Math.abs(skillA - skillB) * 2;
             score += Math.random() * 1.5;
             if (score < bestScore) { bestScore = score; bestPairing = pairing; }
           }
@@ -319,7 +326,7 @@
         if (toAdd.length === 0) return;
         setPlayers((prev) => [
           ...prev,
-          ...toAdd.map((p) => ({ ...p, availFrom: 0, availTo: totalSlots - 1, group: "full" })),
+          ...toAdd.map((p) => ({ ...p, skill: p.skill ?? 2, availFrom: 0, availTo: totalSlots - 1, group: "full" })),
         ]);
         setResult(null);
       }, [players, totalSlots]);
@@ -327,7 +334,7 @@
       const addPlayer = useCallback(() => {
         const name = nameInput.trim();
         if (!name || players.find((p) => p.name.toLowerCase() === name.toLowerCase())) return;
-        setPlayers((prev) => [...prev, { name, gender: genderInput, availFrom: 0, availTo: totalSlots - 1, group: "full" }]);
+        setPlayers((prev) => [...prev, { name, gender: genderInput, skill: 2, availFrom: 0, availTo: totalSlots - 1, group: "full" }]);
         setNameInput(""); setResult(null);
       }, [nameInput, genderInput, players, totalSlots]);
 
@@ -446,6 +453,28 @@
               </div>
             </div>
 
+            {/* Empty state */}
+            {players.length === 0 && (
+              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "24px 20px", marginBottom: 20 }}>
+                <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>How it works</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {[
+                    ["1", "Add your players", "Type names below, or load the default roster to get started quickly."],
+                    ["2", "Configure the session", "Set game length, number of courts, and whether anyone is arriving late or leaving early."],
+                    ["3", "Generate & share", "Hit Generate to get a balanced schedule. Re-roll until you're happy, then copy it to your group chat."],
+                  ].map(([num, title, desc]) => (
+                    <div key={num} style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, background: "rgba(34,211,238,0.1)", borderRadius: "50%", width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{num}</span>
+                      <div>
+                        <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{title}</p>
+                        <p style={{ fontSize: 12, color: C.textDim, lineHeight: 1.5 }}>{desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Player Input */}
             <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
               <input value={nameInput} onChange={(e) => setNameInput(e.target.value)}
@@ -492,6 +521,19 @@
                     <span style={{ color: p.gender === "F" ? C.pink : C.accent, fontWeight: 700, fontSize: 14, minWidth: 70 }}>{p.name}</span>
                     <span style={{ fontSize: 11, color: C.textDim }}>{p.gender === "F" ? "♀" : "♂"}</span>
 
+                    {/* Skill selector — always visible */}
+                    <div style={{ display: "flex", gap: 2, marginLeft: "auto" }}>
+                      {[1, 2, 3].map((s) => (
+                        <button key={s} onClick={() => updatePlayer(i, "skill", s)}
+                          style={{
+                            background: (p.skill ?? 2) === s ? `${SKILL_COLORS[s]}22` : "transparent",
+                            color: (p.skill ?? 2) === s ? SKILL_COLORS[s] : C.textMuted,
+                            border: `1px solid ${(p.skill ?? 2) === s ? SKILL_COLORS[s] : C.border}`,
+                            borderRadius: 4, padding: "3px 7px", fontSize: 11, fontWeight: 600, fontFamily: font,
+                          }}>{SKILL_LABELS[s]}</button>
+                      ))}
+                    </div>
+
                     {staggerMode === "group" && (
                       <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                         {[["early", "Early"], ["full", "Full"], ["late", "Late"]].map(([val, label]) => (
@@ -520,7 +562,7 @@
                     )}
 
                     <button onClick={() => removePlayer(i)}
-                      style={{ background: "none", border: "none", color: C.textMuted, fontSize: 16, padding: 0, marginLeft: staggerMode === "none" ? "auto" : 0 }}>×</button>
+                      style={{ background: "none", border: "none", color: C.textMuted, fontSize: 16, padding: 0, marginLeft: 4 }}>×</button>
                   </div>
                 ))}
               </div>
