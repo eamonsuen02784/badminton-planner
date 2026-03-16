@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>🏸 Badminton Match Planner</title>
+  <title>Badminton Match Planner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -232,7 +235,35 @@
     const COURT_COLORS = ["#22d3ee", "#a78bfa", "#fb923c"];
     const COURT_BG = ["rgba(34,211,238,0.08)", "rgba(167,139,250,0.08)", "rgba(251,146,60,0.08)"];
 
-    const font = "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace";
+    const font = "'Inter', system-ui, sans-serif";
+
+    const Icon = ({ d, size = 16 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+        style={{ display: "inline-block", verticalAlign: "middle", flexShrink: 0 }}>
+        {d.map((path, i) => path.startsWith("M") || path.startsWith("C") || path.startsWith("L") || path.startsWith("A") || path.startsWith("Z")
+          ? <path key={i} d={path} />
+          : <path key={i} d={path} />
+        )}
+      </svg>
+    );
+
+    // Lucide icon paths
+    const ICONS = {
+      shuffle:  ["M16 3h5v5", "M4 20 21 3", "M21 16v5h-5", "M15 15l6 6", "M4 4l5 5"],
+      copy:     ["M9 9h13v13H9z", "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"],
+      download: ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M7 10l5 5 5-5", "M12 15V3"],
+      trash:    ["M3 6h18", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"],
+      check:    ["M20 6 9 17l-5-5"],
+    };
+
+    const LucideIcon = ({ name, size = 16 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+        style={{ display: "inline-block", verticalAlign: "middle", flexShrink: 0 }}>
+        {ICONS[name].map((d, i) => <path key={i} d={d} />)}
+      </svg>
+    );
 
     // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -367,7 +398,7 @@
             {/* Header */}
             <div style={{ marginBottom: 28, borderBottom: `1px solid ${C.border}`, paddingBottom: 16 }}>
               <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 26 }}>🏸</span> Match Planner
+                Match Planner
               </h1>
               <p style={{ color: C.textDim, fontSize: 13, margin: "6px 0 0" }}>
                 3 hrs · {totalSlots} slots × {gameMinutes} min · {numCourts} court{numCourts > 1 ? "s" : ""}
@@ -507,7 +538,12 @@
                     flex: 1, background: `linear-gradient(135deg, ${C.accentDim}, ${C.pinkDim})`,
                     color: "#fff", border: "none", borderRadius: 8, padding: "14px",
                     fontSize: 14, fontWeight: 700, fontFamily: font, letterSpacing: "1px", textTransform: "uppercase",
-                  }}>{result ? "🎲 Re-roll" : `Generate (${totalSlots} slots)`}</button>
+                  }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
+                    <LucideIcon name="shuffle" size={15} />
+                    {result ? "Re-roll" : `Generate (${totalSlots} slots)`}
+                  </span>
+                </button>
 
                 {result && (
                   <button onClick={copySchedule}
@@ -516,7 +552,7 @@
                       border: `1px solid ${copied ? C.green : C.border}`,
                       borderRadius: 8, padding: "14px 16px", fontSize: 14, fontWeight: 700,
                       fontFamily: font, transition: "all 0.2s", minWidth: 52,
-                    }}>{copied ? "✓" : "📋"}</button>
+                    }}><LucideIcon name={copied ? "check" : "copy"} size={15} /></button>
                 )}
                 {result && (
                   <button onClick={saveAsImage}
@@ -524,7 +560,7 @@
                       background: C.card, color: C.text, border: `1px solid ${C.border}`,
                       borderRadius: 8, padding: "14px 16px", fontSize: 14, fontWeight: 700,
                       fontFamily: font, minWidth: 52,
-                    }}>📸</button>
+                    }}><LucideIcon name="download" size={15} /></button>
                 )}
                 {result && (
                   <button onClick={clearSchedule}
@@ -533,7 +569,7 @@
                       background: C.card, color: C.textMuted, border: `1px solid ${C.border}`,
                       borderRadius: 8, padding: "14px 16px", fontSize: 14, fontWeight: 700,
                       fontFamily: font, minWidth: 52,
-                    }}>🗑</button>
+                    }}><LucideIcon name="trash" size={15} /></button>
                 )}
               </div>
             )}
@@ -541,7 +577,7 @@
             {/* Saved indicator */}
             {saved && (
               <p style={{ fontSize: 12, color: C.green, textAlign: "center", marginTop: -16, marginBottom: 16 }}>
-                ✓ Schedule saved — will persist on refresh
+                Schedule saved — will persist on refresh
               </p>
             )}
 
@@ -549,7 +585,7 @@
             {result && (
               <div ref={scheduleRef} style={{ background: C.bg, padding: 16, borderRadius: 12 }}>
                 <div style={{ textAlign: "center", marginBottom: 16 }}>
-                  <span style={{ fontSize: 18, fontWeight: 700 }}>🏸 Badminton Schedule</span>
+                  <span style={{ fontSize: 18, fontWeight: 700 }}>Badminton Schedule</span>
                   <p style={{ fontSize: 12, color: C.textDim, margin: "4px 0 0" }}>
                     {totalSlots} slots × {gameMinutes} min · {numCourts} court{numCourts > 1 ? "s" : ""} · {players.length} players
                   </p>
