@@ -88,8 +88,6 @@
       { name: "Edwin", gender: "M", skill: 2 }, { name: "Stanley", gender: "M", skill: 2 },
     ];
 
-    const SKILL_LABELS = { 1: "Low", 2: "Mid", 3: "High" };
-    const SKILL_COLORS = { 1: "#fbbf24", 2: "#64748b", 3: "#34d399" };
 
     // ─── Utilities ───────────────────────────────────────────────────────────────
 
@@ -284,6 +282,8 @@
       const [numCourts, setNumCourts] = useState(() => loadState("bp-numCourts", 1));
       const [staggerMode, setStaggerMode] = useState(() => loadState("bp-staggerMode", "none"));
       const [result, setResult] = useState(() => loadState("bp-result", null));
+      const [scores, setScores] = useState(() => loadState("bp-scores", {}));
+      const [winLoss, setWinLoss] = useState(() => loadState("bp-winloss", {}));
       const [copied, setCopied] = useState(false);
       const [saved, setSaved] = useState(false);
       const scheduleRef = useRef(null);
@@ -291,6 +291,8 @@
       const totalSlots = Math.floor(TOTAL_MINUTES / gameMinutes);
 
       // Persist state to localStorage
+      useEffect(() => { localStorage.setItem("bp-scores", JSON.stringify(scores)); }, [scores]);
+      useEffect(() => { localStorage.setItem("bp-winloss", JSON.stringify(winLoss)); }, [winLoss]);
       useEffect(() => { localStorage.setItem("bp-players", JSON.stringify(players)); }, [players]);
       useEffect(() => { localStorage.setItem("bp-gameMinutes", JSON.stringify(gameMinutes)); }, [gameMinutes]);
       useEffect(() => { localStorage.setItem("bp-numCourts", JSON.stringify(numCourts)); }, [numCourts]);
@@ -346,14 +348,54 @@
         setPlayers((prev) => prev.map((p, i) => i === idx ? { ...p, [field]: value } : p)); setResult(null);
       }, []);
 
+      const computeSkill = useCallback((name) => {
+        const wl = winLoss[name];
+        if (!wl || wl.wins + wl.losses === 0) return 0.5;
+        return wl.wins / (wl.wins + wl.losses);
+      }, [winLoss]);
+
+      const updateScore = useCallback((slot, courtIdx, aVal, bVal, teamA, teamB) => {
+        const key = `s${slot}c${courtIdx}`;
+        const aNum = parseInt(aVal), bNum = parseInt(bVal);
+        const valid = !isNaN(aNum) && !isNaN(bNum) && aNum >= 0 && bNum >= 0 && aNum !== bNum;
+
+        setScores(prev => {
+          const prevEntry = prev[key];
+          // Undo previous applied score before applying new one
+          if (prevEntry?.applied || valid) {
+            setWinLoss(wl => {
+              const next = JSON.parse(JSON.stringify(wl));
+              if (prevEntry?.applied) {
+                const pA = parseInt(prevEntry.a), pB = parseInt(prevEntry.b);
+                const w = pA > pB ? prevEntry.teamA : prevEntry.teamB;
+                const l = pA > pB ? prevEntry.teamB : prevEntry.teamA;
+                w.forEach(n => { if (next[n]) next[n].wins = Math.max(0, next[n].wins - 1); });
+                l.forEach(n => { if (next[n]) next[n].losses = Math.max(0, next[n].losses - 1); });
+              }
+              if (valid) {
+                const w = aNum > bNum ? teamA : teamB;
+                const l = aNum > bNum ? teamB : teamA;
+                w.forEach(n => { next[n] = { wins: (next[n]?.wins ?? 0) + 1, losses: next[n]?.losses ?? 0 }; });
+                l.forEach(n => { next[n] = { wins: next[n]?.wins ?? 0, losses: (next[n]?.losses ?? 0) + 1 }; });
+              }
+              return next;
+            });
+          }
+          return { ...prev, [key]: { a: aVal, b: bVal, applied: valid, teamA, teamB } };
+        });
+      }, []);
+
       const generate = useCallback(() => {
         if (players.length < 4) return;
-        setResult(generateSchedule(getPlayersWithAvailability(), totalSlots, numCourts));
+        const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
+        setScores({});
+        setResult(generateSchedule(playersWithSkill, totalSlots, numCourts));
         setCopied(false);
-      }, [players, totalSlots, numCourts, getPlayersWithAvailability]);
+      }, [players, totalSlots, numCourts, getPlayersWithAvailability, computeSkill]);
 
       const clearSchedule = useCallback(() => {
         setResult(null);
+        setScores({});
       }, []);
 
       const copySchedule = useCallback(() => {
@@ -521,19 +563,6 @@
                     <span style={{ color: p.gender === "F" ? C.pink : C.accent, fontWeight: 700, fontSize: 14, minWidth: 70 }}>{p.name}</span>
                     <span style={{ fontSize: 11, color: C.textDim }}>{p.gender === "F" ? "♀" : "♂"}</span>
 
-                    {/* Skill selector — always visible */}
-                    <div style={{ display: "flex", gap: 2, marginLeft: "auto" }}>
-                      {[1, 2, 3].map((s) => (
-                        <button key={s} onClick={() => updatePlayer(i, "skill", s)}
-                          style={{
-                            background: (p.skill ?? 2) === s ? `${SKILL_COLORS[s]}22` : "transparent",
-                            color: (p.skill ?? 2) === s ? SKILL_COLORS[s] : C.textMuted,
-                            border: `1px solid ${(p.skill ?? 2) === s ? SKILL_COLORS[s] : C.border}`,
-                            borderRadius: 4, padding: "3px 7px", fontSize: 11, fontWeight: 600, fontFamily: font,
-                          }}>{SKILL_LABELS[s]}</button>
-                      ))}
-                    </div>
-
                     {staggerMode === "group" && (
                       <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                         {[["early", "Early"], ["full", "Full"], ["late", "Late"]].map(([val, label]) => (
@@ -549,7 +578,7 @@
                     )}
 
                     {staggerMode === "custom" && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: staggerMode === "group" ? 0 : "auto" }}>
                         <span style={{ fontSize: 11, color: C.textDim }}>Slots</span>
                         <input type="number" min={1} max={totalSlots} value={p.availFrom + 1}
                           onChange={(e) => updatePlayer(i, "availFrom", Math.max(0, Math.min(+e.target.value - 1, p.availTo)))}
@@ -562,7 +591,7 @@
                     )}
 
                     <button onClick={() => removePlayer(i)}
-                      style={{ background: "none", border: "none", color: C.textMuted, fontSize: 16, padding: 0, marginLeft: 4 }}>×</button>
+                      style={{ background: "none", border: "none", color: C.textMuted, fontSize: 16, padding: 0, marginLeft: "auto" }}>×</button>
                   </div>
                 ))}
               </div>
@@ -695,6 +724,36 @@
                               ))}
                             </div>
                           </div>
+                          {/* Score entry */}
+                          {(() => {
+                            const key = `s${s.slot}c${ci}`;
+                            const sc = scores[key] || { a: "", b: "" };
+                            const tA = court.teamA.map(p => p.name);
+                            const tB = court.teamB.map(p => p.name);
+                            const inputStyle = (active) => ({
+                              width: 38, background: C.bg,
+                              border: `1px solid ${active ? C.green : C.border}`,
+                              borderRadius: 4, padding: "4px 0", color: C.text,
+                              fontSize: 13, fontFamily: font, textAlign: "center",
+                              outline: "none",
+                            });
+                            return (
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+                                <input type="number" min={0} max={99} value={sc.a}
+                                  onChange={e => updateScore(s.slot, ci, e.target.value, sc.b, tA, tB)}
+                                  placeholder="–" style={inputStyle(sc.applied)} />
+                                <span style={{ color: C.textMuted, fontSize: 12, fontWeight: 600 }}>–</span>
+                                <input type="number" min={0} max={99} value={sc.b}
+                                  onChange={e => updateScore(s.slot, ci, sc.a, e.target.value, tA, tB)}
+                                  placeholder="–" style={inputStyle(sc.applied)} />
+                                {sc.applied && (
+                                  <span style={{ fontSize: 11, color: C.green, fontWeight: 600 }}>
+                                    {parseInt(sc.a) > parseInt(sc.b) ? tA.join(" & ") : tB.join(" & ")} won
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       ))}
 
