@@ -33,6 +33,7 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
+from shared.google_calendar import booked_dates_from_calendar, fetch_bkbc_bookings
 from shared.http import APIClient
 from shared.state import StateManager
 from shared.telegram import TelegramClient
@@ -242,6 +243,8 @@ def build_alert(slots: list[dict]) -> str:
         f"🔗 {BOOK_URL}",
         "",
     ]
+
+    # Available slots grouped by date
     by_date: dict[str, list[dict]] = {}
     for s in slots:
         by_date.setdefault(s["date"], []).append(s)
@@ -252,6 +255,20 @@ def build_alert(slots: list[dict]) -> str:
         for s in sorted(by_date[d], key=lambda x: x["time_str"]):
             lines.append(f"  • {s['time_display']} — {s['combo']}")
         lines.append("")
+
+    # Already-booked courts from Google Calendar
+    bookings = fetch_bkbc_bookings()
+    if bookings:
+        lines.append("📋 *Already booked:*")
+        for b in bookings:
+            dt  = datetime.strptime(b["date"], "%Y-%m-%d")
+            day = dt.strftime("%a, %b %-d")
+            parts = [day]
+            if b["time"]:   parts.append(b["time"])
+            if b["court"]:  parts.append(f"Court #{b['court']}")
+            if b["size"]:   parts.append(f"({b['size']})")
+            lines.append(f"  • {' — '.join(parts[:2])}" +
+                         (f" — {' '.join(parts[2:])}" if parts[2:] else ""))
 
     return "\n".join(lines).strip()
 
@@ -285,9 +302,13 @@ def main():
     # Process incoming Telegram commands first
     wants_status = process_commands(state, tg)
 
-    booked_dates = set(state.get("booked_dates", []))
-    available    = run_check(booked_dates)
-    fresh        = new_slots(available, state)
+    # Merge calendar bookings + manually marked dates
+    calendar_booked = booked_dates_from_calendar()
+    manual_booked   = set(state.get("booked_dates", []))
+    booked_dates    = calendar_booked | manual_booked
+
+    available = run_check(booked_dates)
+    fresh     = new_slots(available, state)
 
     if args.status or wants_status:
         msg = (
