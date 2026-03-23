@@ -86,6 +86,7 @@
       const consecutiveRested = initialState ? [...initialState.consecutiveRested] : new Array(n).fill(0);
       const partnerCount = initialState ? initialState.partnerCount.map(r => [...r]) : Array.from({ length: n }, () => new Array(n).fill(0));
       const opponentCount = initialState ? initialState.opponentCount.map(r => [...r]) : Array.from({ length: n }, () => new Array(n).fill(0));
+      let womenDoublesCount = 0; // track across slots; target >= 2
 
       for (let slot = startFrom; slot < totalSlots; slot++) {
         const available = [];
@@ -93,7 +94,17 @@
           if (slot >= players[i].availFrom && slot <= players[i].availTo) available.push(i);
         }
 
-        const courtsThisSlot = Math.min(courtsPerSlot[slot], Math.floor(available.length / 4));
+        // Compute constraints first so courtsThisSlot reflects who can actually play
+        const mustPlay = [], mustRest = [], canPlay = [];
+        for (const i of available) {
+          if (consecutivePlayed[i] >= 2) mustRest.push(i);
+          else if (consecutiveRested[i] >= 2) mustPlay.push(i);
+          else canPlay.push(i);
+        }
+
+        // Base court count on eligible players (excluding mustRest) so courts stay filled
+        const eligibleCount = available.length - mustRest.length;
+        const courtsThisSlot = Math.min(courtsPerSlot[slot], Math.floor(eligibleCount / 4));
         if (courtsThisSlot === 0) {
           schedule.push({ slot: slot + 1, courts: [], sitting: available.map((i) => players[i]),
             playerState: players.map((p, i) => ({
@@ -106,13 +117,6 @@
         }
 
         const playersNeeded = courtsThisSlot * 4;
-        const mustPlay = [], mustRest = [], canPlay = [];
-
-        for (const i of available) {
-          if (consecutivePlayed[i] >= 2) mustRest.push(i);
-          else if (consecutiveRested[i] >= 2) mustPlay.push(i);
-          else canPlay.push(i);
-        }
 
         const canPlayGrouped = {};
         for (const p of canPlay) {
@@ -148,6 +152,8 @@
             [[courtPlayers[0], courtPlayers[3]], [courtPlayers[1], courtPlayers[2]]],
           ];
 
+          const isWD = (t) => players[t[0]].gender === "F" && players[t[1]].gender === "F";
+
           let bestPairing = pairings[0], bestScore = Infinity;
           for (const pairing of pairings) {
             const [tA, tB] = pairing;
@@ -161,12 +167,15 @@
             const skillA = (players[tA[0]].skill ?? 2) + (players[tA[1]].skill ?? 2);
             const skillB = (players[tB[0]].skill ?? 2) + (players[tB[1]].skill ?? 2);
             score += Math.abs(skillA - skillB) * 2;
+            // Strongly prefer women's doubles pairings until target is met
+            if (womenDoublesCount < 2 && !isWD(tA) && !isWD(tB)) score += 5;
             score += Math.random() * 1.5;
             if (score < bestScore) { bestScore = score; bestPairing = pairing; }
           }
 
           const [teamA, teamB] = bestPairing;
           courts.push({ court: c + 1, teamA: teamA.map((i) => players[i]), teamB: teamB.map((i) => players[i]) });
+          if (isWD(teamA) || isWD(teamB)) womenDoublesCount++;
 
           partnerCount[teamA[0]][teamA[1]]++; partnerCount[teamA[1]][teamA[0]]++;
           partnerCount[teamB[0]][teamB[1]]++; partnerCount[teamB[1]][teamB[0]]++;
