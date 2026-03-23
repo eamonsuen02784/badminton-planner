@@ -199,6 +199,15 @@ export default function BadmintonPlanner() {
     });
   }, [players, staggerMode, totalSlots]);
 
+  const resetPlayers = useCallback(() => {
+    setPlayers(DEFAULT_PLAYERS.map((p) => ({ ...p, availFrom: 0, availTo: totalSlots - 1, group: "full" })));
+    setResult(null);
+  }, [totalSlots]);
+
+  const clearPlayers = useCallback(() => {
+    setPlayers([]); setResult(null);
+  }, []);
+
   const addPlayer = useCallback(() => {
     const name = nameInput.trim();
     if (!name || players.find((p) => p.name.toLowerCase() === name.toLowerCase())) return;
@@ -360,6 +369,14 @@ export default function BadmintonPlanner() {
           <button onClick={addPlayer}
             style={{ background: C.accent, color: C.bg, border: "none", borderRadius: 6, padding: "10px 18px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: font }}>
             ADD
+          </button>
+          <button onClick={resetPlayers}
+            style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: "10px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: font }}>
+            RESET
+          </button>
+          <button onClick={clearPlayers}
+            style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: "10px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: font }}>
+            CLEAR
           </button>
         </div>
 
