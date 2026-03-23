@@ -122,12 +122,19 @@
         for (const p of canPlay) {
           const avail = players[p].availTo - players[p].availFrom + 1;
           const rate = avail > 0 ? gamesPlayed[p] / avail : 0;
-          const key = Math.round(rate * 100);
+          // Secondary sort by consecutivePlayed: prefer fresh players (0) over
+          // those who just played (1) — reduces synchronized mustRest cascades
+          // when switching from single-court to multi-court slots.
+          const key = `${Math.round(rate * 100)}_${consecutivePlayed[p]}`;
           if (!canPlayGrouped[key]) canPlayGrouped[key] = [];
           canPlayGrouped[key].push(p);
         }
         const canPlayShuffled = Object.keys(canPlayGrouped)
-          .sort((a, b) => +a - +b)
+          .sort((a, b) => {
+            const [rA, cA] = a.split("_").map(Number);
+            const [rB, cB] = b.split("_").map(Number);
+            return rA !== rB ? rA - rB : cA - cB;
+          })
           .flatMap((g) => shuffle(canPlayGrouped[g]));
 
         const pool = [...shuffle(mustPlay), ...canPlayShuffled];
