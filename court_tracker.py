@@ -138,8 +138,9 @@ def in_window(time_str: str) -> bool:
     return AFTER_HOUR <= dt_et.hour <= LATEST_START_HOUR
 
 
-def check_wednesday(check_date: date) -> list[dict]:
-    print(f"  Checking {check_date}…", flush=True)
+def check_wednesday(check_date: date, already_booked: bool = False) -> list[dict]:
+    label = " (checking for additional court)" if already_booked else ""
+    print(f"  Checking {check_date}{label}…", flush=True)
 
     times_8ppl       = set(t for t in fetch_times_any("8ppl", check_date) if in_window(t))
     court_count_6ppl = {t: c for t, c in count_courts_for_6ppl(check_date).items() if in_window(t)}
@@ -150,24 +151,37 @@ def check_wednesday(check_date: date) -> list[dict]:
         display  = dt_et.strftime("%-I:%M %p")
         courts_6 = court_count_6ppl.get(time_str, 0)
 
-        if time_str in times_8ppl:
-            available.append({"date": check_date.isoformat(), "time_str": time_str,
-                               "time_display": display, "combo": "8 people (1 court)"})
-        if courts_6 >= 2:
-            available.append({"date": check_date.isoformat(), "time_str": time_str,
-                               "time_display": display,
-                               "combo": f"6+4 or 6+6 people (2 courts, {courts_6} free)"})
+        if already_booked:
+            # Already have 1 court — look for 1 more to reach 10-12+ people
+            if time_str in times_8ppl:
+                available.append({"date": check_date.isoformat(), "time_str": time_str,
+                                   "time_display": display,
+                                   "combo": "additional 8-person court (+8 people)",
+                                   "additional": True})
+            if courts_6 >= 1:
+                available.append({"date": check_date.isoformat(), "time_str": time_str,
+                                   "time_display": display,
+                                   "combo": f"additional 6-person court (+6 people, {courts_6} free)",
+                                   "additional": True})
+        else:
+            if time_str in times_8ppl:
+                available.append({"date": check_date.isoformat(), "time_str": time_str,
+                                   "time_display": display, "combo": "8 people (1 court)",
+                                   "additional": False})
+            if courts_6 >= 2:
+                available.append({"date": check_date.isoformat(), "time_str": time_str,
+                                   "time_display": display,
+                                   "combo": f"6+4 or 6+6 people (2 courts, {courts_6} free)",
+                                   "additional": False})
     return available
 
 
 def run_check(booked_dates: set[str]) -> list[dict]:
-    wednesdays  = next_wednesdays(WEEKS_AHEAD)
+    wednesdays    = next_wednesdays(WEEKS_AHEAD)
     all_available = []
     for wed in wednesdays:
-        if wed.isoformat() in booked_dates:
-            print(f"  Skipping {wed} (already booked)", flush=True)
-            continue
-        all_available.extend(check_wednesday(wed))
+        already_booked = wed.isoformat() in booked_dates
+        all_available.extend(check_wednesday(wed, already_booked=already_booked))
     return all_available
 
 
@@ -244,17 +258,28 @@ def build_alert(slots: list[dict]) -> str:
         "",
     ]
 
-    # Available slots grouped by date
-    by_date: dict[str, list[dict]] = {}
-    for s in slots:
-        by_date.setdefault(s["date"], []).append(s)
+    new_slots   = [s for s in slots if not s.get("additional")]
+    extra_slots = [s for s in slots if s.get("additional")]
 
-    for d in sorted(by_date):
-        dt = datetime.strptime(d, "%Y-%m-%d")
-        lines.append(f"📅 *{dt.strftime('%A, %B %-d')}*")
-        for s in sorted(by_date[d], key=lambda x: x["time_str"]):
-            lines.append(f"  • {s['time_display']} — {s['combo']}")
-        lines.append("")
+    def _render_by_date(slot_list: list[dict]) -> list[str]:
+        by_date: dict[str, list[dict]] = {}
+        for s in slot_list:
+            by_date.setdefault(s["date"], []).append(s)
+        out = []
+        for d in sorted(by_date):
+            dt = datetime.strptime(d, "%Y-%m-%d")
+            out.append(f"📅 *{dt.strftime('%A, %B %-d')}*")
+            for s in sorted(by_date[d], key=lambda x: x["time_str"]):
+                out.append(f"  • {s['time_display']} — {s['combo']}")
+            out.append("")
+        return out
+
+    if new_slots:
+        lines += _render_by_date(new_slots)
+
+    if extra_slots:
+        lines.append("➕ *Additional courts (dates already booked — expand to 10-12+ people):*")
+        lines += _render_by_date(extra_slots)
 
     # Already-booked courts from Google Calendar
     bookings = fetch_bkbc_bookings()

@@ -16,7 +16,7 @@ const shuffle = (arr) => {
 
 // ─── Algorithm ───────────────────────────────────────────────────────────────
 
-function generateSchedule(players, totalSlots, numCourts) {
+function generateSchedule(players, totalSlots, courtsPerSlot) {
   const n = players.length;
   if (n < 4) return null;
 
@@ -33,7 +33,7 @@ function generateSchedule(players, totalSlots, numCourts) {
       if (slot >= players[i].availFrom && slot <= players[i].availTo) available.push(i);
     }
 
-    const courtsThisSlot = Math.min(numCourts, Math.floor(available.length / 4));
+    const courtsThisSlot = Math.min(courtsPerSlot[slot], Math.floor(available.length / 4));
     if (courtsThisSlot === 0) {
       schedule.push({ slot: slot + 1, courts: [], sitting: available.map((i) => players[i]),
         playerState: players.map((p, i) => ({
@@ -148,6 +148,8 @@ const DEFAULT_PLAYERS = [
   { name: "Mindy", gender: "F" }, { name: "Yuta", gender: "M" },
   { name: "Jae", gender: "M" }, { name: "Jess", gender: "F" },
   { name: "Edwin", gender: "M" }, { name: "Stanley", gender: "M" },
+  { name: "Kayleen", gender: "F" }, { name: "Ricky", gender: "M" },
+  { name: "Tim", gender: "M" }, { name: "Henry", gender: "M" },
 ];
 
 const font = "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace";
@@ -162,12 +164,26 @@ export default function BadmintonPlanner() {
   const [genderInput, setGenderInput] = useState("M");
   const [gameMinutes, setGameMinutes] = useState(DEFAULT_GAME_MINUTES);
   const [numCourts, setNumCourts] = useState(1);
+  const [extraCourt, setExtraCourt] = useState({ enabled: false, startMin: 60, durationMin: 90 });
   const [staggerMode, setStaggerMode] = useState("none");
   const [result, setResult] = useState(null);
   const [copied, setCopied] = useState(false);
   const scheduleRef = useRef(null);
 
   const totalSlots = Math.floor(TOTAL_MINUTES / gameMinutes);
+
+  const getCourtsPerSlot = useCallback(() => {
+    return Array.from({ length: totalSlots }, (_, slot) => {
+      const slotStartMin = slot * gameMinutes;
+      const slotEndMin = slotStartMin + gameMinutes;
+      let courts = numCourts;
+      if (extraCourt.enabled) {
+        const extraEnd = extraCourt.startMin + extraCourt.durationMin;
+        if (slotStartMin < extraEnd && slotEndMin > extraCourt.startMin) courts++;
+      }
+      return Math.min(courts, 3);
+    });
+  }, [totalSlots, gameMinutes, numCourts, extraCourt]);
 
   const getPlayersWithAvailability = useCallback(() => {
     const midSlot = Math.floor(totalSlots / 2);
@@ -200,19 +216,23 @@ export default function BadmintonPlanner() {
 
   const generate = useCallback(() => {
     if (players.length < 4) return;
-    setResult(generateSchedule(getPlayersWithAvailability(), totalSlots, numCourts));
+    setResult(generateSchedule(getPlayersWithAvailability(), totalSlots, getCourtsPerSlot()));
     setCopied(false);
-  }, [players, totalSlots, numCourts, getPlayersWithAvailability]);
+  }, [players, totalSlots, numCourts, extraCourt, getPlayersWithAvailability, getCourtsPerSlot]);
 
   const copySchedule = useCallback(() => {
     if (!result) return;
-    const lines = [`🏸 Badminton Schedule — ${totalSlots} slots × ${gameMinutes} min${numCourts > 1 ? ` × ${numCourts} courts` : ""}\n`];
+    const hasMultiCourts = result.schedule.some(s => s.courts.length > 1);
+    const courtDesc = extraCourt.enabled
+      ? ` · ${numCourts} court${numCourts > 1 ? "s" : ""} +1 extra (${extraCourt.startMin}–${extraCourt.startMin + extraCourt.durationMin}m)`
+      : numCourts > 1 ? ` × ${numCourts} courts` : "";
+    const lines = [`🏸 Badminton Schedule — ${totalSlots} slots × ${gameMinutes} min${courtDesc}\n`];
     result.schedule.forEach((s) => {
       lines.push(`--- Slot ${s.slot} (~${(s.slot - 1) * gameMinutes}-${s.slot * gameMinutes}m) ---`);
       s.courts.forEach((c) => {
         const tA = c.teamA.map((p) => p.name).join(" & ");
         const tB = c.teamB.map((p) => p.name).join(" & ");
-        lines.push(`  ${numCourts > 1 ? `Court ${c.court}: ` : ""}${tA}  vs  ${tB}`);
+        lines.push(`  ${hasMultiCourts ? `Court ${c.court}: ` : ""}${tA}  vs  ${tB}`);
       });
       if (s.sitting && s.sitting.length > 0) lines.push(`  Sit: ${s.sitting.map((p) => p.name).join(", ")}`);
     });
@@ -224,7 +244,7 @@ export default function BadmintonPlanner() {
     document.body.appendChild(ta); ta.select();
     try { document.execCommand("copy"); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch (e) {}
     document.body.removeChild(ta);
-  }, [result, players, gameMinutes, totalSlots, numCourts]);
+  }, [result, players, gameMinutes, totalSlots, numCourts, extraCourt]);
 
   const saveAsImage = useCallback(async () => {
     if (!scheduleRef.current) return;
@@ -252,7 +272,7 @@ export default function BadmintonPlanner() {
             <span style={{ fontSize: 26 }}>🏸</span> Match Planner
           </h1>
           <p style={{ color: C.textDim, fontSize: 13, margin: "6px 0 0" }}>
-            3 hrs · {totalSlots} slots × {gameMinutes} min · {numCourts} court{numCourts > 1 ? "s" : ""}
+            3 hrs · {totalSlots} slots × {gameMinutes} min · {numCourts} court{numCourts > 1 ? "s" : ""}{extraCourt.enabled ? ` +1 extra (${extraCourt.startMin}–${extraCourt.startMin + extraCourt.durationMin}m)` : ""}
           </p>
         </div>
 
@@ -281,6 +301,31 @@ export default function BadmintonPlanner() {
               ))}
             </div>
           </div>
+          {numCourts < 3 && (
+            <div style={{ flex: "0 0 auto" }}>
+              <label style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.5px" }}>Extra court</label>
+              <div style={{ display: "flex", gap: 4, marginTop: 4, alignItems: "center" }}>
+                <button onClick={() => { setExtraCourt(ec => ({ ...ec, enabled: !ec.enabled })); setResult(null); }}
+                  style={{
+                    background: extraCourt.enabled ? C.accentDim : C.card,
+                    color: extraCourt.enabled ? "#fff" : C.textDim,
+                    border: `1px solid ${extraCourt.enabled ? C.accentDim : C.border}`,
+                    borderRadius: 6, padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: font,
+                  }}>{extraCourt.enabled ? "ON" : "OFF"}</button>
+                {extraCourt.enabled && (<>
+                  <span style={{ fontSize: 11, color: C.textDim }}>@</span>
+                  <input type="number" min={0} max={TOTAL_MINUTES - gameMinutes} step={gameMinutes} value={extraCourt.startMin}
+                    onChange={e => { setExtraCourt(ec => ({ ...ec, startMin: +e.target.value })); setResult(null); }}
+                    style={{ width: 44, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "5px 6px", color: C.text, fontSize: 12, fontFamily: font, textAlign: "center" }} />
+                  <span style={{ fontSize: 11, color: C.textDim }}>m for</span>
+                  <input type="number" min={gameMinutes} max={TOTAL_MINUTES} step={gameMinutes} value={extraCourt.durationMin}
+                    onChange={e => { setExtraCourt(ec => ({ ...ec, durationMin: +e.target.value })); setResult(null); }}
+                    style={{ width: 44, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "5px 6px", color: C.text, fontSize: 12, fontFamily: font, textAlign: "center" }} />
+                  <span style={{ fontSize: 11, color: C.textDim }}>m</span>
+                </>)}
+              </div>
+            </div>
+          )}
           <div style={{ flex: "1 1 200px" }}>
             <label style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.5px" }}>Availability</label>
             <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
@@ -401,7 +446,7 @@ export default function BadmintonPlanner() {
             <div style={{ textAlign: "center", marginBottom: 16 }}>
               <span style={{ fontSize: 18, fontWeight: 700 }}>🏸 Badminton Schedule</span>
               <p style={{ fontSize: 12, color: C.textDim, margin: "4px 0 0" }}>
-                {totalSlots} slots × {gameMinutes} min · {numCourts} court{numCourts > 1 ? "s" : ""} · {players.length} players
+                {totalSlots} slots × {gameMinutes} min · {numCourts} court{numCourts > 1 ? "s" : ""}{extraCourt.enabled ? " +1 extra" : ""} · {players.length} players
               </p>
             </div>
 
@@ -445,7 +490,7 @@ export default function BadmintonPlanner() {
                       background: COURT_BG[ci], borderLeft: `3px solid ${COURT_COLORS[ci]}`,
                       borderRadius: 6, padding: "8px 10px", marginBottom: ci < s.courts.length - 1 ? 6 : 0,
                     }}>
-                      {numCourts > 1 && (
+                      {s.courts.length > 1 && (
                         <div style={{ fontSize: 10, color: COURT_COLORS[ci], fontWeight: 700, marginBottom: 4, textTransform: "uppercase" }}>
                           Court {court.court}
                         </div>
