@@ -208,7 +208,7 @@
             score += opponentCount[tA[1]][tB[0]] + opponentCount[tA[1]][tB[1]];
             // Penalise unbalanced gender matchups (MF vs MM, MF vs FF, MM vs FF).
             // Optimal: MM vs MM, FF vs FF, MF vs MF — both teams same composition.
-            if (genderType(tA) !== genderType(tB)) score += 4;
+            if (genderType(tA) !== genderType(tB)) score += 8;
             const skillA = (players[tA[0]].skill ?? 2) + (players[tA[1]].skill ?? 2);
             const skillB = (players[tB[0]].skill ?? 2) + (players[tB[1]].skill ?? 2);
             score += Math.abs(skillA - skillB) * 2;
