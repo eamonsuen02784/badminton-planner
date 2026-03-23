@@ -20,7 +20,7 @@ The algorithm balances several goals, in this order:
 | 6 | Skill-balanced teams — equalize combined skill ratings | Soft (2× penalty) |
 | 7 | At least 2 women's doubles games per session | Soft (5× incentive until met) |
 | 8 | Avoid repeating the same opponents | Soft (1× penalty) |
-| 9 | Prefer mixed-gender teams | Soft (1× penalty for same-gender) |
+| 9 | Balanced gender matchups — MM vs MM, FF vs FF, or MF vs MF | Soft (4× penalty for unbalanced) |
 | 10 | Controlled randomness — variety across re-rolls | Jitter (0–1.5) |
 
 **Hard constraints** are never violated. **Soft constraints** are scored — lower is better — and the best combination wins. When multiple arrangements score equally, jitter breaks the tie randomly so re-rolls produce different schedules.
@@ -62,12 +62,12 @@ Greedy slot-by-slot with two phases per time slot:
 For each court's 4 players, evaluate all 3 possible 2v2 splits and score each:
 
 ```
-score = (partnerRepeat × 3)           // strongly avoid same partners
-      + (skillImbalance × 2)          // equalize team skill totals
-      + (womenDoublesNeeded ? +5 : 0) // incentivize WD until 2 games reached
-      + (opponentRepeat × 1)          // lightly avoid same opponents
-      + (sameGenderTeam × 1)          // soft preference for mixed teams
-      + random(0, 1.5)                // jitter for variety
+score = (partnerRepeat × 3)              // strongly avoid same partners
+      + (skillImbalance × 2)             // equalize team skill totals
+      + (womenDoublesNeeded ? +5 : 0)    // incentivize WD until 2 games reached
+      + (genderTypesMismatch ? +4 : 0)   // prefer MM vs MM, FF vs FF, MF vs MF
+      + (opponentRepeat × 1)             // lightly avoid same opponents
+      + random(0, 1.5)                   // jitter for variety
 ```
 
 Lowest score wins. Skill ratings are derived from each player's win rate from previously entered scores.

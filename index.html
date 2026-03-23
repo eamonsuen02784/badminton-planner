@@ -159,7 +159,12 @@
             [[courtPlayers[0], courtPlayers[3]], [courtPlayers[1], courtPlayers[2]]],
           ];
 
-          const isWD = (t) => players[t[0]].gender === "F" && players[t[1]].gender === "F";
+          // MM, FF, or MF — used to penalise unbalanced gender matchups
+          const genderType = (t) => {
+            const a = players[t[0]].gender, b = players[t[1]].gender;
+            return a === "M" && b === "M" ? "MM" : a === "F" && b === "F" ? "FF" : "MF";
+          };
+          const isWD = (t) => genderType(t) === "FF";
 
           let bestPairing = pairings[0], bestScore = Infinity;
           for (const pairing of pairings) {
@@ -169,8 +174,9 @@
             score += partnerCount[tB[0]][tB[1]] * 3;
             score += opponentCount[tA[0]][tB[0]] + opponentCount[tA[0]][tB[1]];
             score += opponentCount[tA[1]][tB[0]] + opponentCount[tA[1]][tB[1]];
-            if (players[tA[0]].gender === players[tA[1]].gender) score += 1;
-            if (players[tB[0]].gender === players[tB[1]].gender) score += 1;
+            // Penalise unbalanced gender matchups (MF vs MM, MF vs FF, MM vs FF).
+            // Optimal: MM vs MM, FF vs FF, MF vs MF — both teams same composition.
+            if (genderType(tA) !== genderType(tB)) score += 4;
             const skillA = (players[tA[0]].skill ?? 2) + (players[tA[1]].skill ?? 2);
             const skillB = (players[tB[0]].skill ?? 2) + (players[tB[1]].skill ?? 2);
             score += Math.abs(skillA - skillB) * 2;
