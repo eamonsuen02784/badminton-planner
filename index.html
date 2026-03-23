@@ -146,12 +146,44 @@
         const actualCourts = Math.min(courtsThisSlot, Math.floor(selected.length / 4));
         selected = selected.slice(0, actualCourts * 4);
 
+        // ── Gender balance: ensure even F count so courts can be distributed
+        // as 2F+2M or 4M (never 3F+1M or 1F+3M which force MF vs MM/FF).
+        const selFCount = selected.filter(i => players[i].gender === "F").length;
+        if (selFCount % 2 !== 0) {
+          // Odd F — try swapping one non-mustPlay F out for an unselected M
+          const swappableF = selected.filter(i => players[i].gender === "F" && !mustPlay.includes(i));
+          const unselM = remaining.filter(i => players[i].gender === "M" && !selected.includes(i));
+          if (swappableF.length > 0 && unselM.length > 0) {
+            selected = selected.filter(i => i !== swappableF[swappableF.length - 1]);
+            selected.push(unselM[0]);
+          } else {
+            // Alternatively add one more F if available
+            const unselF = remaining.filter(i => players[i].gender === "F" && !selected.includes(i));
+            if (unselF.length > 0) selected = [...selected.slice(0, actualCourts * 4 - 1), unselF[0]];
+          }
+        }
+
+        // ── Gender-aware court grouping: assign 2F+2M (or 4M/4F) per court
+        // so the pairing optimizer always has a balanced arrangement available.
+        const courtGroups = [];
+        let remF = shuffle(selected.filter(i => players[i].gender === "F"));
+        let remM = shuffle(selected.filter(i => players[i].gender === "M"));
+        for (let c = 0; c < actualCourts; c++) {
+          const courtsLeft = actualCourts - c;
+          // Use 2F+2M if we have enough F to give 2 per remaining court, else use 4M (or 4F)
+          if (remF.length >= 2 && remM.length >= 2 && Math.ceil(remF.length / courtsLeft) >= 2) {
+            courtGroups.push([...remF.splice(0, 2), ...remM.splice(0, 2)]);
+          } else if (remF.length >= 4) {
+            courtGroups.push(remF.splice(0, 4));
+          } else {
+            courtGroups.push([...remF.splice(0, remF.length), ...remM.splice(0, 4 - remF.length)]);
+          }
+        }
+
         const courts = [];
-        let unassigned = [...selected];
 
         for (let c = 0; c < actualCourts; c++) {
-          const courtPlayers = unassigned.slice(0, 4);
-          unassigned = unassigned.slice(4);
+          const courtPlayers = courtGroups[c];
 
           const pairings = [
             [[courtPlayers[0], courtPlayers[1]], [courtPlayers[2], courtPlayers[3]]],
