@@ -53,9 +53,10 @@ Greedy slot-by-slot with two phases per time slot:
 
 1. Filter by each player's availability window
 2. Classify players: `mustRest` (≥2 consecutive games), `mustPlay` (≥2 consecutive rests), `canPlay`
-3. Compute eligible count = available − mustRest; use this to determine how many courts can be filled
-4. Sort `canPlay` by normalized play rate (`gamesPlayed / availableSlots`), shuffle within tied groups (Fisher-Yates)
-5. Fill `numCourts × 4` spots: mustPlay first, then canPlay by rate order
+3. Compute eligible count = available − mustRest; derive `courtsThisSlot = min(courtsPerSlot, floor(eligible / 4))` — this ensures no court is left empty
+4. Sort `canPlay` by normalized play rate (`gamesPlayed / availableSlots`), with `consecutivePlayed` as a secondary tiebreaker (spreads rest cycles to prevent mustRest cascade), then Fisher-Yates shuffle within tied groups
+5. Fill `courtsThisSlot × 4` spots: mustPlay first, then canPlay by rate order
+6. Post-selection even-F swap: if the selected female count is odd, swap one non-mustPlay female for an unselected male (or add one more female) — odd F count makes balanced court grouping impossible
 
 ### Phase 1.5 — Court Grouping (gender-aware)
 
@@ -115,7 +116,6 @@ Lowest score wins. Skill ratings are derived from each player's win rate from pr
 
 ## Stack
 
-- Single HTML file — React 18 + Babel loaded from CDN, no build step
+- Single HTML file (`index.html`) — React 18 + Babel loaded from CDN, no build step
 - html2canvas for image export (loaded on demand)
 - Hosted on GitHub Pages
-- Source component: `badminton-planner.jsx` (synced into `index.html` for deployment)
