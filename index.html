@@ -208,7 +208,7 @@
             score += opponentCount[tA[1]][tB[0]] + opponentCount[tA[1]][tB[1]];
             // Penalise unbalanced gender matchups (MF vs MM, MF vs FF, MM vs FF).
             // Optimal: MM vs MM, FF vs FF, MF vs MF — both teams same composition.
-            if (genderType(tA) !== genderType(tB)) score += 8;
+            if (genderType(tA) !== genderType(tB)) score += 12;
             const skillA = (players[tA[0]].skill ?? 2) + (players[tA[1]].skill ?? 2);
             const skillB = (players[tB[0]].skill ?? 2) + (players[tB[1]].skill ?? 2);
             score += Math.abs(skillA - skillB) * 2;
@@ -330,6 +330,7 @@
       const [fromSlot, setFromSlot] = useState(1);
       const [copied, setCopied] = useState(false);
       const [saved, setSaved] = useState(false);
+      const [isGenerating, setIsGenerating] = useState(false);
       const scheduleRef = useRef(null);
 
       const totalSlots = Math.floor(TOTAL_MINUTES / gameMinutes);
@@ -452,12 +453,16 @@
       }, []);
 
       const generate = useCallback(() => {
-        if (players.length < 4) return;
-        const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
-        setScores({});
-        setResult(generateSchedule(playersWithSkill, totalSlots, getCourtsPerSlot()));
+        if (players.length < 4 || isGenerating) return;
+        setIsGenerating(true);
         setCopied(false);
-      }, [players, totalSlots, numCourts, extraCourt, getPlayersWithAvailability, computeSkill, getCourtsPerSlot]);
+        setTimeout(() => {
+          const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
+          setScores({});
+          setResult(generateSchedule(playersWithSkill, totalSlots, getCourtsPerSlot()));
+          setIsGenerating(false);
+        }, 0);
+      }, [players, totalSlots, numCourts, extraCourt, isGenerating, getPlayersWithAvailability, computeSkill, getCourtsPerSlot]);
 
       const regenerateRemaining = useCallback(() => {
         if (players.length < 4 || !result) return;
@@ -731,15 +736,16 @@
             {/* Action Buttons */}
             {players.length >= 4 && (
               <div className="action-buttons">
-                <button className="generate-btn" onClick={generate}
+                <button className="generate-btn" onClick={generate} disabled={isGenerating}
                   style={{
                     flex: 1, background: `linear-gradient(135deg, ${C.accentDim}, ${C.pinkDim})`,
                     color: "#fff", border: "none", borderRadius: 8, padding: "14px",
                     fontSize: 14, fontWeight: 700, fontFamily: font, letterSpacing: "1px", textTransform: "uppercase",
+                    opacity: isGenerating ? 0.6 : 1,
                   }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
                     <LucideIcon name="shuffle" size={15} />
-                    {result ? "Re-roll" : `Generate (${totalSlots} slots)`}
+                    {isGenerating ? "Generating…" : result ? "Re-roll" : `Generate (${totalSlots} slots)`}
                   </span>
                 </button>
                 {result && (
