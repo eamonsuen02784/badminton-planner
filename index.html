@@ -10,6 +10,43 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- ── Firebase (optional cloud sync) ──────────────────────────────────────
+       Enables win-loss records to sync across devices automatically.
+       Setup:
+         1. Create a free project at console.firebase.google.com
+         2. Add a Realtime Database → Start in test mode (or set rules to allow read/write)
+         3. Uncomment the two <script> lines below
+         4. Fill in FIREBASE_CONFIG in the <script> block that follows
+  -->
+  <!-- <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script> -->
+  <!-- <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script> -->
+  <script>
+    window.FIREBASE_CONFIG = null;
+    // window.FIREBASE_CONFIG = {
+    //   apiKey: "", authDomain: "", databaseURL: "",
+    //   projectId: "", storageBucket: "", messagingSenderId: "", appId: ""
+    // };
+
+    // Set a PIN to require authentication before scores can be entered or synced.
+    // Leave null to allow score entry by anyone (fine for local/trusted use).
+    window.ADMIN_PIN = null;
+    // window.ADMIN_PIN = "1234";
+
+    window.DB = (() => {
+      if (!window.FIREBASE_CONFIG || typeof firebase === 'undefined') return null;
+      try {
+        if (!firebase.apps.length) firebase.initializeApp(window.FIREBASE_CONFIG);
+        const ref = firebase.database().ref('winLoss');
+        return {
+          load:      ()     => ref.once('value').then(s => s.val() || {}),
+          save:      (data) => ref.set(data),
+          subscribe: (cb)   => { ref.on('value', s => cb(s.val() || {})); return () => ref.off(); },
+        };
+      } catch(e) { console.warn('Firebase init failed, using localStorage only:', e); return null; }
+    })();
+  </script>
+
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0a0f1a; }
@@ -240,8 +277,8 @@
             // never wins over a balanced option. Only occurs when court grouping fails
             // to produce even-gender groups (edge case with mustPlay constraints).
             if (genderType(tA) !== genderType(tB)) score += 15;
-            const skillA = (players[tA[0]].skill ?? 2) + (players[tA[1]].skill ?? 2);
-            const skillB = (players[tB[0]].skill ?? 2) + (players[tB[1]].skill ?? 2);
+            const skillA = (players[tA[0]].skill ?? 0.5) + (players[tA[1]].skill ?? 0.5);
+            const skillB = (players[tB[0]].skill ?? 0.5) + (players[tB[1]].skill ?? 0.5);
             score += Math.abs(skillA - skillB) * 2;
             score += Math.random() * 1.5;
             if (score < bestScore) { bestScore = score; bestPairing = pairing; }
@@ -362,14 +399,51 @@
       const [copied, setCopied] = useState(false);
       const [saved, setSaved] = useState(false);
       const [isGenerating, setIsGenerating] = useState(false);
-      const [genSlot, setGenSlot] = useState(0); // current slot during generation (for progress display)
+      const [genSlot, setGenSlot] = useState(0);
+      const [dbSynced, setDbSynced] = useState(null); // null | 'syncing' | 'synced' | 'error'
+      const [isAdmin, setIsAdmin] = useState(() =>
+        !window.ADMIN_PIN || sessionStorage.getItem('bp-admin') === window.ADMIN_PIN
+      );
+      const [showPinPrompt, setShowPinPrompt] = useState(false);
+      const [pinInput, setPinInput] = useState('');
+      const [pinError, setPinError] = useState(false);
+      const [showImport, setShowImport] = useState(false);
+      const [importText, setImportText] = useState('');
+      const [importError, setImportError] = useState('');
       const scheduleRef = useRef(null);
 
       const totalSlots = Math.floor(TOTAL_MINUTES / gameMinutes);
 
-      // Persist state to localStorage
+      // Load win-loss from Firebase on mount (merge with localStorage)
+      useEffect(() => {
+        if (!window.DB) return;
+        window.DB.load().then(remote => {
+          setWinLoss(local => {
+            const merged = { ...local };
+            for (const [name, data] of Object.entries(remote)) {
+              if (!merged[name]) merged[name] = data;
+              else merged[name] = {
+                wins:   Math.max(merged[name].wins   ?? 0, data.wins   ?? 0),
+                losses: Math.max(merged[name].losses ?? 0, data.losses ?? 0),
+              };
+            }
+            return merged;
+          });
+          setDbSynced('synced');
+        }).catch(() => setDbSynced('error'));
+      }, []);
+
+      // Persist state to localStorage (and Firebase for winLoss)
       useEffect(() => { localStorage.setItem("bp-scores", JSON.stringify(scores)); }, [scores]);
-      useEffect(() => { localStorage.setItem("bp-winloss", JSON.stringify(winLoss)); }, [winLoss]);
+      useEffect(() => {
+        localStorage.setItem("bp-winloss", JSON.stringify(winLoss));
+        if (window.DB && isAdmin) {
+          setDbSynced('syncing');
+          window.DB.save(winLoss)
+            .then(() => setDbSynced('synced'))
+            .catch(() => setDbSynced('error'));
+        }
+      }, [winLoss, isAdmin]);
       useEffect(() => { localStorage.setItem("bp-players", JSON.stringify(players)); }, [players]);
       useEffect(() => { localStorage.setItem("bp-gameMinutes", JSON.stringify(gameMinutes)); }, [gameMinutes]);
       useEffect(() => { localStorage.setItem("bp-numCourts", JSON.stringify(numCourts)); }, [numCourts]);
@@ -448,6 +522,52 @@
         setPlayers((prev) => prev.map((p, i) => i === idx ? { ...p, [field]: value } : p)); setResult(null);
       }, []);
 
+      const submitPin = useCallback(() => {
+        if (pinInput === window.ADMIN_PIN) {
+          sessionStorage.setItem('bp-admin', pinInput);
+          setIsAdmin(true); setShowPinPrompt(false); setPinInput(''); setPinError(false);
+        } else { setPinError(true); }
+      }, [pinInput]);
+
+      const clearWinLoss = useCallback(() => {
+        setWinLoss({});
+        if (window.DB && isAdmin) window.DB.save({});
+      }, [isAdmin]);
+
+      // Parse the human-readable copied schedule text back into a result object
+      const parseScheduleText = useCallback((text) => {
+        const playerMap = Object.fromEntries(players.map(p => [p.name.toLowerCase(), p]));
+        const resolve = (name) => playerMap[name.toLowerCase()] || { name, gender: '?' };
+        const slots = [];
+        let cur = null;
+        for (const raw of text.split('\n')) {
+          const line = raw.trim();
+          const slotM = line.match(/^--- Slot (\d+) .* ---$/);
+          if (slotM) { if (cur) slots.push(cur); cur = { slot: +slotM[1], courts: [], sitting: [] }; continue; }
+          if (!cur) continue;
+          const courtM = line.match(/^(?:Court (\d+): )?(.+?)\s{2}vs\s{2}(.+)$/);
+          if (courtM) {
+            const courtNum = courtM[1] ? +courtM[1] : cur.courts.length + 1;
+            cur.courts.push({
+              court: courtNum,
+              teamA: courtM[2].split('&').map(n => resolve(n.trim())),
+              teamB: courtM[3].split('&').map(n => resolve(n.trim())),
+            });
+            continue;
+          }
+          const sitM = line.match(/^Sit: (.+)$/);
+          if (sitM) cur.sitting = sitM[1].split(',').map(n => resolve(n.trim()));
+        }
+        if (cur) slots.push(cur);
+        return slots.length > 0 ? { schedule: slots, gamesPlayed: players.map(() => 0) } : null;
+      }, [players]);
+
+      const importSchedule = useCallback(() => {
+        const parsed = parseScheduleText(importText);
+        if (!parsed) { setImportError('Could not parse schedule — paste the full copied text.'); return; }
+        setResult(parsed); setScores({}); setShowImport(false); setImportText(''); setImportError('');
+      }, [importText, parseScheduleText]);
+
       const computeSkill = useCallback((name) => {
         const wl = winLoss[name];
         if (!wl || wl.wins + wl.losses === 0) return 0.5;
@@ -455,6 +575,7 @@
       }, [winLoss]);
 
       const updateScore = useCallback((slot, courtIdx, aVal, bVal, teamA, teamB) => {
+        if (!isAdmin) return;
         const key = `s${slot}c${courtIdx}`;
         const aNum = parseInt(aVal), bNum = parseInt(bVal);
         const valid = !isNaN(aNum) && !isNaN(bNum) && isValidBadmintonScore(aNum, bNum);
@@ -482,7 +603,7 @@
           }
           return { ...prev, [key]: { a: aVal, b: bVal, applied: valid, teamA, teamB } };
         });
-      }, []);
+      }, [isAdmin]);
 
       const generate = useCallback(() => {
         if (players.length < 4 || isGenerating) return;
@@ -574,17 +695,88 @@
       const allDefaultsLoaded = DEFAULT_PLAYERS.every((dp) =>
         players.some((p) => p.name.toLowerCase() === dp.name.toLowerCase())
       );
+      const hasAppliedScores = result && Object.values(scores).some(s => s.applied);
+
+      // Skill dot: green >60%, yellow 40-60%, red <40%, grey no data
+      const skillDot = (name) => {
+        const wl = winLoss[name];
+        const total = wl ? (wl.wins ?? 0) + (wl.losses ?? 0) : 0;
+        if (total < 3) return null;
+        const rate = wl.wins / total;
+        const color = rate > 0.6 ? C.green : rate < 0.4 ? '#ef4444' : C.amber;
+        const pct = Math.round(rate * 100);
+        return (
+          <span title={`${pct}% win rate (${total} games)`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
+            {pct}%
+          </span>
+        );
+      };
 
       return (
         <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: font, padding: "24px 16px" }}>
           <div style={{ maxWidth: 780, margin: "0 auto" }}>
 
+            {/* PIN prompt modal */}
+            {showPinPrompt && (
+              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 28, width: 280 }}>
+                  <p style={{ fontWeight: 700, marginBottom: 12 }}>Enter admin PIN</p>
+                  <input type="password" value={pinInput} onChange={e => { setPinInput(e.target.value); setPinError(false); }}
+                    onKeyDown={e => e.key === 'Enter' && submitPin()}
+                    autoFocus placeholder="PIN"
+                    style={{ width: '100%', background: C.bg, border: `1px solid ${pinError ? '#ef4444' : C.border}`, borderRadius: 6, padding: '8px 10px', color: C.text, fontSize: 14, fontFamily: font, marginBottom: 8 }} />
+                  {pinError && <p style={{ color: '#ef4444', fontSize: 11, marginBottom: 8 }}>Incorrect PIN</p>}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={submitPin} style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '8px', fontWeight: 700, fontFamily: font }}>Unlock</button>
+                    <button onClick={() => { setShowPinPrompt(false); setPinInput(''); setPinError(false); }} style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 12px', fontFamily: font }}>Cancel</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Import modal */}
+            {showImport && (
+              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, width: '100%', maxWidth: 520 }}>
+                  <p style={{ fontWeight: 700, marginBottom: 8 }}>Import schedule from text</p>
+                  <p style={{ fontSize: 12, color: C.textDim, marginBottom: 12 }}>Paste the copied schedule text (the same text you send to the group chat).</p>
+                  <textarea value={importText} onChange={e => { setImportText(e.target.value); setImportError(''); }}
+                    placeholder="🏸 Badminton Schedule — ..."
+                    style={{ width: '100%', height: 200, background: C.bg, border: `1px solid ${importError ? '#ef4444' : C.border}`, borderRadius: 6, padding: '8px 10px', color: C.text, fontSize: 12, fontFamily: font, resize: 'vertical' }} />
+                  {importError && <p style={{ color: '#ef4444', fontSize: 11, margin: '4px 0 8px' }}>{importError}</p>}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                    <button onClick={importSchedule} style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '10px', fontWeight: 700, fontFamily: font }}>Import</button>
+                    <button onClick={() => { setShowImport(false); setImportText(''); setImportError(''); }} style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px 16px', fontFamily: font }}>Cancel</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Header */}
-            <div style={{ marginBottom: 28, borderBottom: `1px solid ${C.border}`, paddingBottom: 16 }}>
-              <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Match Planner</h1>
-              <p style={{ color: C.textDim, fontSize: 13, margin: "6px 0 0" }}>
-                3 hrs · {totalSlots} slots × {gameMinutes} min · {numCourts} court{numCourts > 1 ? "s" : ""}{extraCourt.enabled ? ` +1 extra (${extraCourt.startMin}–${extraCourt.startMin + extraCourt.durationMin}m)` : ""}
-              </p>
+            <div style={{ marginBottom: 28, borderBottom: `1px solid ${C.border}`, paddingBottom: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Match Planner</h1>
+                <p style={{ color: C.textDim, fontSize: 13, margin: "6px 0 0" }}>
+                  3 hrs · {totalSlots} slots × {gameMinutes} min · {numCourts} court{numCourts > 1 ? "s" : ""}{extraCourt.enabled ? ` +1 extra (${extraCourt.startMin}–${extraCourt.startMin + extraCourt.durationMin}m)` : ""}
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+                {window.DB && (
+                  <span title={dbSynced === 'synced' ? 'Win-loss synced to cloud' : dbSynced === 'syncing' ? 'Syncing…' : dbSynced === 'error' ? 'Sync failed' : 'Cloud sync ready'}
+                    style={{ fontSize: 13, color: dbSynced === 'synced' ? C.green : dbSynced === 'error' ? '#ef4444' : C.textMuted }}>
+                    {dbSynced === 'synced' ? '☁ Synced' : dbSynced === 'syncing' ? '⟳' : dbSynced === 'error' ? '☁ ✗' : '☁'}
+                  </span>
+                )}
+                {window.ADMIN_PIN && (
+                  <button onClick={() => isAdmin ? (sessionStorage.removeItem('bp-admin'), setIsAdmin(false)) : setShowPinPrompt(true)}
+                    title={isAdmin ? 'Click to lock score entry' : 'Click to unlock score entry'}
+                    style={{ background: isAdmin ? C.accentDim : C.card, color: isAdmin ? '#fff' : C.textMuted, border: `1px solid ${isAdmin ? 'transparent' : C.border}`, borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 700, fontFamily: font }}>
+                    {isAdmin ? '🔓 Admin' : '🔒 Lock'}
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Settings */}
@@ -720,6 +912,13 @@
                   CLEAR
                 </button>
               )}
+              {Object.keys(winLoss).length > 0 && (
+                <button onClick={clearWinLoss}
+                  title="Clear all win-loss records and skill ratings"
+                  style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 600, fontFamily: font }}>
+                  RESET W/L
+                </button>
+              )}
             </div>
 
             {/* Player List */}
@@ -737,6 +936,7 @@
                         {winLoss[p.name].wins}W–{winLoss[p.name].losses}L
                       </span>
                     )}
+                    {skillDot(p.name)}
 
                     {staggerMode === "group" && (
                       <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
@@ -779,6 +979,12 @@
             {/* Action Buttons */}
             {players.length >= 4 && (
               <div className="action-buttons">
+                {!result && (
+                  <button onClick={() => setShowImport(true)}
+                    style={{ background: 'transparent', color: C.textDim, border: `1px dashed ${C.border}`, borderRadius: 8, padding: "14px 16px", fontSize: 13, fontFamily: font }}>
+                    Import
+                  </button>
+                )}
                 <button className="generate-btn" onClick={generate} disabled={isGenerating}
                   style={{
                     flex: 1, background: `linear-gradient(135deg, ${C.accentDim}, ${C.pinkDim})`,
@@ -814,6 +1020,13 @@
                       borderRadius: 8, padding: "14px 16px", fontFamily: font, minWidth: 52,
                     }}><LucideIcon name="trash" size={15} /></button>
                 )}
+              </div>
+            )}
+
+            {/* Scores-applied hint */}
+            {hasAppliedScores && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, background: C.card, border: `1px solid ${C.amber}33`, borderRadius: 8, padding: '8px 14px' }}>
+                <span style={{ fontSize: 12, color: C.amber }}>⚡ Scores recorded — re-roll to use updated skill ratings in the next schedule</span>
               </div>
             )}
 
@@ -933,11 +1146,13 @@
                               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
                                 <input type="number" min={0} max={30} value={sc.a}
                                   onChange={e => updateScore(s.slot, ci, e.target.value, sc.b, tA, tB)}
-                                  placeholder="–" style={inputStyle(sc.applied)} />
+                                  placeholder="–" disabled={!isAdmin} title={!isAdmin ? 'Unlock admin to enter scores' : undefined}
+                                  style={{ ...inputStyle(sc.applied), opacity: isAdmin ? 1 : 0.4 }} />
                                 <span style={{ color: C.textMuted, fontSize: 12, fontWeight: 600 }}>–</span>
                                 <input type="number" min={0} max={30} value={sc.b}
                                   onChange={e => updateScore(s.slot, ci, sc.a, e.target.value, tA, tB)}
-                                  placeholder="–" style={inputStyle(sc.applied)} />
+                                  placeholder="–" disabled={!isAdmin} title={!isAdmin ? 'Unlock admin to enter scores' : undefined}
+                                  style={{ ...inputStyle(sc.applied), opacity: isAdmin ? 1 : 0.4 }} />
                                 {sc.applied && (
                                   <span style={{ fontSize: 11, color: C.green, fontWeight: 600 }}>
                                     {parseInt(sc.a) > parseInt(sc.b) ? tA.join(" & ") : tB.join(" & ")} won
