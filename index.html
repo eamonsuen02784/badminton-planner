@@ -170,6 +170,16 @@
         //   WD mode activates when: wdTarget not met AND ≥4F selected AND ≥2 courts
         //   so that grouping an all-female court is possible without leaving a
         //   short-changed court. After the target is met, revert to normal mode.
+        // Helper: take exactly 4 players from remF+remM, capturing remF.length
+        // BEFORE the first splice to avoid the JS mutation hazard where the second
+        // operand sees the already-emptied array (e.g. `4 - remF.length` after
+        // `remF.splice(0, remF.length)` would always evaluate to 4, not the
+        // original count, causing downstream courts to receive too few players).
+        const takeGroup = () => {
+          const fCount = Math.min(remF.length, 4);
+          return [...remF.splice(0, fCount), ...remM.splice(0, 4 - fCount)];
+        };
+
         const courtGroups = [];
         let remF = shuffle(selected.filter(i => players[i].gender === "F"));
         let remM = shuffle(selected.filter(i => players[i].gender === "M"));
@@ -181,7 +191,7 @@
             if (remF.length >= 2 && remM.length >= 2 && Math.ceil(remF.length / courtsLeft) >= 2) {
               courtGroups.push([...remF.splice(0, 2), ...remM.splice(0, 2)]);
             } else {
-              courtGroups.push([...remF.splice(0, remF.length), ...remM.splice(0, 4 - remF.length)]);
+              courtGroups.push(takeGroup());
             }
           }
         } else {
@@ -192,7 +202,7 @@
             } else if (remF.length >= 4) {
               courtGroups.push(remF.splice(0, 4));
             } else {
-              courtGroups.push([...remF.splice(0, remF.length), ...remM.splice(0, 4 - remF.length)]);
+              courtGroups.push(takeGroup());
             }
           }
         }
@@ -352,6 +362,7 @@
       const [copied, setCopied] = useState(false);
       const [saved, setSaved] = useState(false);
       const [isGenerating, setIsGenerating] = useState(false);
+      const [genSlot, setGenSlot] = useState(0); // current slot during generation (for progress display)
       const scheduleRef = useRef(null);
 
       const totalSlots = Math.floor(TOTAL_MINUTES / gameMinutes);
@@ -479,12 +490,19 @@
         setResult(null);
         setScores({});
         setCopied(false);
+        setGenSlot(0);
         const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
         const gen = generateScheduleGen(playersWithSkill, totalSlots, getCourtsPerSlot());
+        // Drive the generator with rAF for a live slot counter.
+        // We only update setResult once at the end — calling it on every slot
+        // triggers a full React re-render each time, which at Babel CDN speeds
+        // inflates a 12-slot schedule to 30+ seconds.
+        let lastValue = null;
         function step() {
           const { value, done } = gen.next();
-          if (value) setResult(value);
-          if (done) { setIsGenerating(false); } else { requestAnimationFrame(step); }
+          if (value) { lastValue = value; setGenSlot(value.schedule.length); }
+          if (done) { setResult(lastValue); setIsGenerating(false); }
+          else { requestAnimationFrame(step); }
         }
         requestAnimationFrame(step);
       }, [players, totalSlots, numCourts, extraCourt, isGenerating, getPlayersWithAvailability, computeSkill, getCourtsPerSlot]);
@@ -770,7 +788,7 @@
                   }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
                     <LucideIcon name="shuffle" size={15} />
-                    {isGenerating ? "Generating…" : result ? "Re-roll" : `Generate (${totalSlots} slots)`}
+                    {isGenerating ? `Slot ${genSlot} / ${totalSlots}…` : result ? "Re-roll" : `Generate (${totalSlots} slots)`}
                   </span>
                 </button>
                 {result && (
