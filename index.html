@@ -212,8 +212,12 @@
             const skillA = (players[tA[0]].skill ?? 2) + (players[tA[1]].skill ?? 2);
             const skillB = (players[tB[0]].skill ?? 2) + (players[tB[1]].skill ?? 2);
             score += Math.abs(skillA - skillB) * 2;
-            // Strongly prefer women's doubles pairings until target is met
-            if (womenDoublesCount < 2 && !isWD(tA) && !isWD(tB)) score += 5;
+            // Prefer WD in first half; urgency decays to near-zero by midpoint
+            if (womenDoublesCount < 2 && !isWD(tA) && !isWD(tB)) {
+              const progress = slot / totalSlots; // 0 at start, 1 at end
+              const urgency = progress < 0.5 ? 10 : 2; // strong first half, weak second
+              score += urgency;
+            }
             score += Math.random() * 1.5;
             if (score < bestScore) { bestScore = score; bestPairing = pairing; }
           }
