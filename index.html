@@ -76,7 +76,7 @@
 
     // ─── Algorithm ───────────────────────────────────────────────────────────────
 
-    function generateSchedule(players, totalSlots, courtsPerSlot, startFrom = 0, initialState = null) {
+    function* generateScheduleGen(players, totalSlots, courtsPerSlot, startFrom = 0, initialState = null) {
       const n = players.length;
       if (n < 4) return null;
 
@@ -261,9 +261,15 @@
         }));
 
         schedule.push({ slot: slot + 1, courts, sitting, playerState });
+        yield { schedule: [...schedule], gamesPlayed: [...gamesPlayed] };
       }
+    }
 
-      return { schedule, gamesPlayed };
+    // Synchronous wrapper for regenerateRemaining (collects all yields)
+    function generateSchedule(players, totalSlots, courtsPerSlot, startFrom = 0, initialState = null) {
+      let result = null;
+      for (result of generateScheduleGen(players, totalSlots, courtsPerSlot, startFrom, initialState));
+      return result;
     }
 
     function extractState(keptSlots, players) {
@@ -470,13 +476,17 @@
       const generate = useCallback(() => {
         if (players.length < 4 || isGenerating) return;
         setIsGenerating(true);
+        setResult(null);
+        setScores({});
         setCopied(false);
-        setTimeout(() => {
-          const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
-          setScores({});
-          setResult(generateSchedule(playersWithSkill, totalSlots, getCourtsPerSlot()));
-          setIsGenerating(false);
-        }, 0);
+        const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
+        const gen = generateScheduleGen(playersWithSkill, totalSlots, getCourtsPerSlot());
+        function step() {
+          const { value, done } = gen.next();
+          if (value) setResult(value);
+          if (done) { setIsGenerating(false); } else { requestAnimationFrame(step); }
+        }
+        requestAnimationFrame(step);
       }, [players, totalSlots, numCourts, extraCourt, isGenerating, getPlayersWithAvailability, computeSkill, getCourtsPerSlot]);
 
       const regenerateRemaining = useCallback(() => {
