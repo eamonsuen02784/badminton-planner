@@ -18,9 +18,9 @@ The algorithm balances several goals, in this order:
 | 4 | All courts filled every slot (no empty courts) | Hard |
 | 5 | Avoid repeating the same partner | Soft (3× penalty) |
 | 6 | Skill-balanced teams — equalize combined skill ratings | Soft (2× penalty) |
-| 7 | At least 2 women's doubles games per session | Soft (5× incentive until met) |
+| 7 | At least 2 women's doubles games per session | Grouping (4F court when target unmet) |
 | 8 | Avoid repeating the same opponents | Soft (1× penalty) |
-| 9 | Balanced gender matchups — MM vs MM, FF vs FF, or MF vs MF | Soft (4× penalty for unbalanced) |
+| 9 | Balanced gender matchups — MM vs MM, FF vs FF, or MF vs MF | Semi-hard (15× penalty for unbalanced) |
 | 10 | Controlled randomness — variety across re-rolls | Jitter (0–1.5) |
 
 **Hard constraints** are never violated. **Soft constraints** are scored — lower is better — and the best combination wins. When multiple arrangements score equally, jitter breaks the tie randomly so re-rolls produce different schedules.
@@ -57,6 +57,15 @@ Greedy slot-by-slot with two phases per time slot:
 4. Sort `canPlay` by normalized play rate (`gamesPlayed / availableSlots`), shuffle within tied groups (Fisher-Yates)
 5. Fill `numCourts × 4` spots: mustPlay first, then canPlay by rate order
 
+### Phase 1.5 — Court Grouping (gender-aware)
+
+Before pairing, players are assigned to courts to guarantee a balanced gender composition:
+
+- **WD mode** (active when WD target < 2 and ≥4 females selected and ≥2 courts): groups all 4 females onto one court → guaranteed FF vs FF game. Remaining courts fill with males (MM vs MM).
+- **Normal mode**: distributes 2F+2M per court → enables MF vs MF matchups.
+
+This is the mechanism that produces women's doubles — it cannot be achieved via pairing score alone since FF vs FF requires all 4 players on a court to be female.
+
 ### Phase 2 — Team Pairing
 
 For each court's 4 players, evaluate all 3 possible 2v2 splits and score each:
@@ -64,13 +73,12 @@ For each court's 4 players, evaluate all 3 possible 2v2 splits and score each:
 ```
 score = (partnerRepeat × 3)              // strongly avoid same partners
       + (skillImbalance × 2)             // equalize team skill totals
-      + (womenDoublesNeeded ? +5 : 0)    // incentivize WD until 2 games reached
-      + (genderTypesMismatch ? +4 : 0)   // prefer MM vs MM, FF vs FF, MF vs MF
+      + (genderTypesMismatch ? +15 : 0)  // semi-hard: MM vs MM, FF vs FF, MF vs MF only
       + (opponentRepeat × 1)             // lightly avoid same opponents
       + random(0, 1.5)                   // jitter for variety
 ```
 
-Lowest score wins. Skill ratings are derived from each player's win rate from previously entered scores.
+Lowest score wins. Skill ratings are derived from each player's win rate from previously entered scores. The gender mismatch penalty (15) exceeds the realistic maximum of all other soft factors combined (~13), making it a near-hard constraint that only yields in extreme edge cases (e.g. mustPlay constraints force an ungroupable composition).
 
 ---
 

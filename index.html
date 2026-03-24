@@ -163,20 +163,37 @@
           }
         }
 
-        // ── Gender-aware court grouping: assign 2F+2M (or 4M/4F) per court
-        // so the pairing optimizer always has a balanced arrangement available.
+        // ── Court grouping ───────────────────────────────────────────────────────
+        // Goal: give the pairing optimizer a balanced gender composition per court.
+        // Normal mode  → 2F+2M per court  (enables MF vs MF)
+        // WD mode      → 4F on one court, rest get 4M (enables FF vs FF + MM vs MM)
+        //   WD mode activates when: wdTarget not met AND ≥4F selected AND ≥2 courts
+        //   so that grouping an all-female court is possible without leaving a
+        //   short-changed court. After the target is met, revert to normal mode.
         const courtGroups = [];
         let remF = shuffle(selected.filter(i => players[i].gender === "F"));
         let remM = shuffle(selected.filter(i => players[i].gender === "M"));
-        for (let c = 0; c < actualCourts; c++) {
-          const courtsLeft = actualCourts - c;
-          // Use 2F+2M if we have enough F to give 2 per remaining court, else use 4M (or 4F)
-          if (remF.length >= 2 && remM.length >= 2 && Math.ceil(remF.length / courtsLeft) >= 2) {
-            courtGroups.push([...remF.splice(0, 2), ...remM.splice(0, 2)]);
-          } else if (remF.length >= 4) {
-            courtGroups.push(remF.splice(0, 4));
-          } else {
-            courtGroups.push([...remF.splice(0, remF.length), ...remM.splice(0, 4 - remF.length)]);
+        const useWDGrouping = womenDoublesCount < 2 && remF.length >= 4 && actualCourts >= 2;
+        if (useWDGrouping) {
+          courtGroups.push(remF.splice(0, 4));          // all-female court → FF vs FF
+          for (let c = 1; c < actualCourts; c++) {
+            const courtsLeft = actualCourts - c;
+            if (remF.length >= 2 && remM.length >= 2 && Math.ceil(remF.length / courtsLeft) >= 2) {
+              courtGroups.push([...remF.splice(0, 2), ...remM.splice(0, 2)]);
+            } else {
+              courtGroups.push([...remF.splice(0, remF.length), ...remM.splice(0, 4 - remF.length)]);
+            }
+          }
+        } else {
+          for (let c = 0; c < actualCourts; c++) {
+            const courtsLeft = actualCourts - c;
+            if (remF.length >= 2 && remM.length >= 2 && Math.ceil(remF.length / courtsLeft) >= 2) {
+              courtGroups.push([...remF.splice(0, 2), ...remM.splice(0, 2)]);
+            } else if (remF.length >= 4) {
+              courtGroups.push(remF.splice(0, 4));
+            } else {
+              courtGroups.push([...remF.splice(0, remF.length), ...remM.splice(0, 4 - remF.length)]);
+            }
           }
         }
 
@@ -208,16 +225,14 @@
             score += opponentCount[tA[1]][tB[0]] + opponentCount[tA[1]][tB[1]];
             // Penalise unbalanced gender matchups (MF vs MM, MF vs FF, MM vs FF).
             // Optimal: MM vs MM, FF vs FF, MF vs MF — both teams same composition.
-            if (genderType(tA) !== genderType(tB)) score += 12;
+            // Gender mismatch: semi-hard constraint. Penalty must exceed the realistic
+            // maximum of all other soft factors combined (~13) so FF vs MM / MF vs MM
+            // never wins over a balanced option. Only occurs when court grouping fails
+            // to produce even-gender groups (edge case with mustPlay constraints).
+            if (genderType(tA) !== genderType(tB)) score += 15;
             const skillA = (players[tA[0]].skill ?? 2) + (players[tA[1]].skill ?? 2);
             const skillB = (players[tB[0]].skill ?? 2) + (players[tB[1]].skill ?? 2);
             score += Math.abs(skillA - skillB) * 2;
-            // Prefer WD in first half; urgency decays to near-zero by midpoint
-            if (womenDoublesCount < 2 && !isWD(tA) && !isWD(tB)) {
-              const progress = slot / totalSlots; // 0 at start, 1 at end
-              const urgency = progress < 0.5 ? 10 : 2; // strong first half, weak second
-              score += urgency;
-            }
             score += Math.random() * 1.5;
             if (score < bestScore) { bestScore = score; bestPairing = pairing; }
           }
