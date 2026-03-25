@@ -392,6 +392,7 @@
       const [numCourts, setNumCourts] = useState(() => loadState("bp-numCourts", 1));
       const [extraCourt, setExtraCourt] = useState(() => loadState("bp-extraCourt", { enabled: false, startMin: 60, durationMin: 90 }));
       const [staggerMode, setStaggerMode] = useState(() => loadState("bp-staggerMode", "none"));
+      const [sessionStart, setSessionStart] = useState(() => loadState("bp-sessionStart", ""));
       const [result, setResult] = useState(() => loadState("bp-result", null));
       const [scores, setScores] = useState(() => loadState("bp-scores", {}));
       const [winLoss, setWinLoss] = useState(() => loadState("bp-winloss", {}));
@@ -449,6 +450,7 @@
       useEffect(() => { localStorage.setItem("bp-numCourts", JSON.stringify(numCourts)); }, [numCourts]);
       useEffect(() => { localStorage.setItem("bp-extraCourt", JSON.stringify(extraCourt)); }, [extraCourt]);
       useEffect(() => { localStorage.setItem("bp-staggerMode", JSON.stringify(staggerMode)); }, [staggerMode]);
+      useEffect(() => { localStorage.setItem("bp-sessionStart", JSON.stringify(sessionStart)); }, [sessionStart]);
       useEffect(() => {
         if (result) {
           localStorage.setItem("bp-result", JSON.stringify(result));
@@ -659,7 +661,7 @@
           : numCourts > 1 ? ` × ${numCourts} courts` : "";
         const lines = [`🏸 Badminton Schedule — ${totalSlots} slots × ${gameMinutes} min${courtDesc}\n`];
         result.schedule.forEach((s) => {
-          lines.push(`--- Slot ${s.slot} (~${(s.slot - 1) * gameMinutes}-${s.slot * gameMinutes}m) ---`);
+          lines.push(`--- Slot ${s.slot} (${slotTime(s.slot)}) ---`);
           s.courts.forEach((c) => {
             const tA = c.teamA.map((p) => p.name).join(" & ");
             const tB = c.teamB.map((p) => p.name).join(" & ");
@@ -696,6 +698,21 @@
         players.some((p) => p.name.toLowerCase() === dp.name.toLowerCase())
       );
       const hasAppliedScores = result && Object.values(scores).some(s => s.applied);
+
+      // Format a slot's time range — absolute if sessionStart is set, relative otherwise
+      const slotTime = (slotIdx) => {
+        const startMin = (slotIdx - 1) * gameMinutes;
+        const endMin   = slotIdx * gameMinutes;
+        if (!sessionStart) return `~${startMin}–${endMin}m`;
+        const [h, m] = sessionStart.split(':').map(Number);
+        const fmt = (totalMin) => {
+          const d = new Date(2000, 0, 1, h, m + totalMin);
+          const hh = d.getHours(), mm = d.getMinutes();
+          const ampm = hh >= 12 ? 'PM' : 'AM';
+          return `${hh % 12 || 12}:${String(mm).padStart(2, '0')} ${ampm}`;
+        };
+        return `${fmt(startMin)} – ${fmt(endMin)}`;
+      };
 
       // Skill dot: green >60%, yellow 40-60%, red <40%, grey no data
       const skillDot = (name) => {
@@ -781,6 +798,18 @@
 
             {/* Settings */}
             <div className="settings-row">
+              <div style={{ flex: "0 0 auto" }}>
+                <label style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.5px" }}>Start time</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                  <input type="time" value={sessionStart}
+                    onChange={e => setSessionStart(e.target.value)}
+                    style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "5px 8px", color: sessionStart ? C.text : C.textMuted, fontSize: 13, fontFamily: font }} />
+                  {sessionStart && (
+                    <button onClick={() => setSessionStart("")}
+                      style={{ background: "none", border: "none", color: C.textMuted, fontSize: 15, padding: 0, lineHeight: 1 }}>×</button>
+                  )}
+                </div>
+              </div>
               <div style={{ flex: "1 1 180px" }}>
                 <label style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.5px" }}>Game length</label>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
@@ -1100,7 +1129,7 @@
                     <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 16px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
                         <span style={{ fontSize: 13, color: C.textDim, fontWeight: 600 }}>SLOT {s.slot}</span>
-                        <span style={{ fontSize: 12, color: C.textMuted }}>~{(s.slot - 1) * gameMinutes}–{s.slot * gameMinutes}m</span>
+                        <span style={{ fontSize: 12, color: C.textMuted }}>{slotTime(s.slot)}</span>
                       </div>
 
                       {s.courts.map((court, ci) => (
