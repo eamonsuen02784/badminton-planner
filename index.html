@@ -662,10 +662,12 @@
         const lines = [`🏸 Badminton Schedule — ${totalSlots} slots × ${gameMinutes} min${courtDesc}\n`];
         result.schedule.forEach((s) => {
           lines.push(`--- Slot ${s.slot} (${slotTime(s.slot)}) ---`);
-          s.courts.forEach((c) => {
+          s.courts.forEach((c, ci) => {
             const tA = c.teamA.map((p) => p.name).join(" & ");
             const tB = c.teamB.map((p) => p.name).join(" & ");
-            lines.push(`  ${hasMultiCourts ? `Court ${c.court}: ` : ""}${tA}  vs  ${tB}`);
+            const sc = scores[`s${s.slot}c${ci}`];
+            const scoreStr = sc?.applied ? `  [${sc.a}–${sc.b}]` : "";
+            lines.push(`  ${hasMultiCourts ? `Court ${c.court}: ` : ""}${tA}  vs  ${tB}${scoreStr}`);
           });
           if (s.sitting && s.sitting.length > 0) lines.push(`  Sit: ${s.sitting.map((p) => p.name).join(", ")}`);
         });
@@ -677,7 +679,7 @@
         document.body.appendChild(ta); ta.select();
         try { document.execCommand("copy"); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch (e) {}
         document.body.removeChild(ta);
-      }, [result, players, gameMinutes, totalSlots, numCourts, extraCourt]);
+      }, [result, players, gameMinutes, totalSlots, numCourts, extraCourt, sessionStart, scores]);
 
       const saveAsImage = useCallback(async () => {
         if (!scheduleRef.current) return;
