@@ -113,7 +113,7 @@
 
     // ─── Algorithm ───────────────────────────────────────────────────────────────
 
-    function* generateScheduleGen(players, totalSlots, courtsPerSlot, startFrom = 0, initialState = null) {
+    function* generateScheduleGen(players, totalSlots, courtsPerSlot, startFrom = 0, initialState = null, forcedFirstSlot = null) {
       const n = players.length;
       if (n < 4) return null;
 
@@ -153,32 +153,35 @@
           continue;
         }
 
-        const playersNeeded = courtsThisSlot * 4;
-
-        const canPlayGrouped = {};
-        for (const p of canPlay) {
-          const avail = players[p].availTo - players[p].availFrom + 1;
-          const rate = avail > 0 ? gamesPlayed[p] / avail : 0;
-          // Secondary sort by consecutivePlayed: prefer fresh players (0) over
-          // those who just played (1) — reduces synchronized mustRest cascades
-          // when switching from single-court to multi-court slots.
-          const key = `${Math.round(rate * 100)}_${consecutivePlayed[p]}`;
-          if (!canPlayGrouped[key]) canPlayGrouped[key] = [];
-          canPlayGrouped[key].push(p);
+        // Phase 1 — Player selection
+        // If this is the first slot being generated and a forced selection was provided,
+        // skip the normal selection algorithm and use the manually chosen players.
+        let selected;
+        if (forcedFirstSlot && slot === startFrom) {
+          selected = forcedFirstSlot.filter(i => available.includes(i));
+        } else {
+          const playersNeeded = courtsThisSlot * 4;
+          const canPlayGrouped = {};
+          for (const p of canPlay) {
+            const avail = players[p].availTo - players[p].availFrom + 1;
+            const rate = avail > 0 ? gamesPlayed[p] / avail : 0;
+            const key = `${Math.round(rate * 100)}_${consecutivePlayed[p]}`;
+            if (!canPlayGrouped[key]) canPlayGrouped[key] = [];
+            canPlayGrouped[key].push(p);
+          }
+          const canPlayShuffled = Object.keys(canPlayGrouped)
+            .sort((a, b) => {
+              const [rA, cA] = a.split("_").map(Number);
+              const [rB, cB] = b.split("_").map(Number);
+              return rA !== rB ? rA - rB : cA - cB;
+            })
+            .flatMap((g) => shuffle(canPlayGrouped[g]));
+          const pool = [...shuffle(mustPlay), ...canPlayShuffled];
+          selected = [];
+          for (const p of mustPlay) { if (selected.length < playersNeeded) selected.push(p); }
+          const remaining = pool.filter((p) => !selected.includes(p) && !mustRest.includes(p));
+          for (const p of remaining) { if (selected.length >= playersNeeded) break; if (!selected.includes(p)) selected.push(p); }
         }
-        const canPlayShuffled = Object.keys(canPlayGrouped)
-          .sort((a, b) => {
-            const [rA, cA] = a.split("_").map(Number);
-            const [rB, cB] = b.split("_").map(Number);
-            return rA !== rB ? rA - rB : cA - cB;
-          })
-          .flatMap((g) => shuffle(canPlayGrouped[g]));
-
-        const pool = [...shuffle(mustPlay), ...canPlayShuffled];
-        let selected = [];
-        for (const p of mustPlay) { if (selected.length < playersNeeded) selected.push(p); }
-        const remaining = pool.filter((p) => !selected.includes(p) && !mustRest.includes(p));
-        for (const p of remaining) { if (selected.length >= playersNeeded) break; if (!selected.includes(p)) selected.push(p); }
 
         const actualCourts = Math.min(courtsThisSlot, Math.floor(selected.length / 4));
         selected = selected.slice(0, actualCourts * 4);
@@ -313,9 +316,9 @@
     }
 
     // Synchronous wrapper for regenerateRemaining (collects all yields)
-    function generateSchedule(players, totalSlots, courtsPerSlot, startFrom = 0, initialState = null) {
+    function generateSchedule(players, totalSlots, courtsPerSlot, startFrom = 0, initialState = null, forcedFirstSlot = null) {
       let result = null;
-      for (result of generateScheduleGen(players, totalSlots, courtsPerSlot, startFrom, initialState));
+      for (result of generateScheduleGen(players, totalSlots, courtsPerSlot, startFrom, initialState, forcedFirstSlot));
       return result;
     }
 
@@ -411,6 +414,8 @@
       const [showImport, setShowImport] = useState(false);
       const [importText, setImportText] = useState('');
       const [importError, setImportError] = useState('');
+      const [editingSlot, setEditingSlot] = useState(null); // slot number (1-based) being edited
+      const [editSelected, setEditSelected] = useState(new Set()); // player names selected to play
       const scheduleRef = useRef(null);
 
       const totalSlots = Math.floor(TOTAL_MINUTES / gameMinutes);
@@ -652,6 +657,40 @@
       const clearSchedule = useCallback(() => {
         setResult(null); setScores({}); setFromSlot(1);
       }, []);
+
+      const startSlotEdit = useCallback((slotNum) => {
+        const s = result?.schedule.find(s => s.slot === slotNum);
+        if (!s) return;
+        const playing = new Set(s.courts.flatMap(c => [...c.teamA, ...c.teamB].map(p => p.name)));
+        setEditSelected(playing);
+        setEditingSlot(slotNum);
+      }, [result]);
+
+      const applySlotEdit = useCallback(() => {
+        if (!editingSlot || !result) return;
+        const slotIdx = editingSlot - 1; // 0-based
+        const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
+        const keptSlots = result.schedule.slice(0, slotIdx);
+        const state = extractState(keptSlots, playersWithSkill);
+        // Map selected player names → player indices
+        const forcedIndices = playersWithSkill
+          .map((p, i) => editSelected.has(p.name) ? i : -1)
+          .filter(i => i >= 0);
+        const newResult = generateSchedule(playersWithSkill, totalSlots, getCourtsPerSlot(), slotIdx, state, forcedIndices);
+        if (!newResult) return;
+        setScores(prev => {
+          const next = {};
+          for (const key in prev) {
+            const m = key.match(/^s(\d+)c/);
+            if (m && parseInt(m[1]) < editingSlot) next[key] = prev[key];
+          }
+          return next;
+        });
+        setResult(newResult);
+        setEditingSlot(null);
+        setEditSelected(new Set());
+        setCopied(false);
+      }, [editingSlot, editSelected, result, players, totalSlots, getPlayersWithAvailability, computeSkill, getCourtsPerSlot]);
 
       const copySchedule = useCallback(() => {
         if (!result) return;
@@ -1128,11 +1167,67 @@
                 {/* Schedule Grid */}
                 <div className="schedule-grid">
                   {result.schedule.map((s, idx) => (
-                    <div key={idx} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 16px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                    <div key={idx} style={{ background: C.card, border: `1px solid ${editingSlot === s.slot ? C.amber : C.border}`, borderRadius: 10, padding: "14px 16px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                         <span style={{ fontSize: 13, color: C.textDim, fontWeight: 600 }}>SLOT {s.slot}</span>
-                        <span style={{ fontSize: 12, color: C.textMuted }}>{slotTime(s.slot)}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 12, color: C.textMuted }}>{slotTime(s.slot)}</span>
+                          {editingSlot === s.slot ? (
+                            <div style={{ display: "flex", gap: 4 }}>
+                              <button onClick={applySlotEdit}
+                                style={{ background: C.accentDim, color: "#fff", border: "none", borderRadius: 5, padding: "3px 10px", fontSize: 11, fontWeight: 700, fontFamily: font }}>
+                                Apply
+                              </button>
+                              <button onClick={() => { setEditingSlot(null); setEditSelected(new Set()); }}
+                                style={{ background: C.card, color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 5, padding: "3px 8px", fontSize: 11, fontFamily: font }}>
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button onClick={() => startSlotEdit(s.slot)}
+                              title="Edit who plays in this slot"
+                              style={{ background: "none", border: "none", color: C.textMuted, fontSize: 13, padding: "2px 4px", lineHeight: 1, cursor: "pointer" }}>
+                              ✏️
+                            </button>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Edit mode: player selection */}
+                      {editingSlot === s.slot && (() => {
+                        const allAvail = [...s.courts.flatMap(c => [...c.teamA, ...c.teamB]), ...s.sitting];
+                        const courtsThisSlot = s.courts.length || 1;
+                        const needed = courtsThisSlot * 4;
+                        const selCount = allAvail.filter(p => editSelected.has(p.name)).length;
+                        return (
+                          <div style={{ marginBottom: 12 }}>
+                            <p style={{ fontSize: 11, color: selCount === needed ? C.green : C.amber, marginBottom: 6, fontWeight: 600 }}>
+                              Select {needed} players to play — {selCount}/{needed} selected
+                            </p>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                              {allAvail.map((p, pi) => {
+                                const on = editSelected.has(p.name);
+                                return (
+                                  <button key={pi} onClick={() => setEditSelected(prev => {
+                                    const next = new Set(prev);
+                                    if (on) next.delete(p.name); else next.add(p.name);
+                                    return next;
+                                  })}
+                                    style={{
+                                      background: on ? C.accentDim : C.bg,
+                                      color: on ? "#fff" : C.textMuted,
+                                      border: `1px solid ${on ? C.accent : C.border}`,
+                                      borderRadius: 16, padding: "4px 12px", fontSize: 12,
+                                      fontWeight: on ? 700 : 400, fontFamily: font,
+                                    }}>
+                                    {p.name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {s.courts.map((court, ci) => (
                         <div key={ci} style={{
