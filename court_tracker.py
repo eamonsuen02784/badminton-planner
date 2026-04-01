@@ -298,13 +298,74 @@ def build_alert(slots: list[dict]) -> str:
     return "\n".join(lines).strip()
 
 
+# ── Sign-up list ───────────────────────────────────────────────────────────────
+
+SIGNUP_ROSTER = [
+    "Eamon",
+    "Jialin",
+    "Mindy",
+    "Yuta",
+    "Jae",
+    "Jess",
+    "Edwin",
+    "Stanley",
+    "Kayleen",
+    "Ricky",
+    "Tim",
+    "Henry",
+]
+
+SIGNUP_FIXED = ["Eamon", "Jialin"]  # always pre-filled at the top
+
+
+def build_signup_list() -> str | None:
+    """
+    Build a Thursday sign-up message for the next booked Wednesday session.
+    Returns None if no upcoming booking is found.
+    """
+    bookings = fetch_bkbc_bookings()
+    if not bookings:
+        return None
+
+    # Use the earliest upcoming booking
+    b = bookings[0]
+    dt = datetime.strptime(b["date"], "%Y-%m-%d")
+    day_str = dt.strftime("%-d/%-m")  # e.g. "25/3"
+
+    court_part = f"Court {b['court']}" if b["court"] else "court TBD"
+    time_part  = b["time"] or "7 PM"
+
+    header = f"Wednesday {day_str} {time_part}–10pm\n{court_part}\n"
+
+    # Eamon and Jialin are always slots 1 & 2; rest are blank
+    lines = []
+    for i, name in enumerate(SIGNUP_FIXED, start=1):
+        lines.append(f"{i}.     {name}")
+    for i in range(len(SIGNUP_FIXED) + 1, len(SIGNUP_ROSTER) + 1):
+        lines.append(f"{i}.")
+
+    return header + "\n".join(lines)
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="Track BKBC Wednesday night availability")
     parser.add_argument("--status",  action="store_true", help="Print current availability (no alert)")
     parser.add_argument("--history", action="store_true", help="Show recent check history")
+    parser.add_argument("--report",  action="store_true", help="Send Thursday sign-up list to Telegram")
     args = parser.parse_args()
+
+    if args.report:
+        tg  = TelegramClient.from_env()
+        msg = build_signup_list()
+        if msg:
+            print("Sending sign-up list to Telegram…")
+            print(msg)
+            tg.send(msg)
+        else:
+            print("No upcoming bookings found — nothing to send.")
+        return
 
     if args.history:
         state  = _state_mgr.load()

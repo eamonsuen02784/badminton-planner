@@ -74,7 +74,7 @@
   <script type="text/babel">
     const { useState, useCallback, useRef, useEffect } = React;
 
-    const TOTAL_MINUTES = 180;
+    const DEFAULT_TOTAL_MINUTES = 180;
     const DEFAULT_GAME_MINUTES = 15;
 
     const DEFAULT_PLAYERS = [
@@ -157,8 +157,10 @@
         // If this is the first slot being generated and a forced selection was provided,
         // skip the normal selection algorithm and use the manually chosen players.
         let selected;
+        let remaining = [];
         if (forcedFirstSlot && slot === startFrom) {
           selected = forcedFirstSlot.filter(i => available.includes(i));
+          remaining = available.filter(i => !selected.includes(i) && !mustRest.includes(i));
         } else {
           const playersNeeded = courtsThisSlot * 4;
           const canPlayGrouped = {};
@@ -179,7 +181,7 @@
           const pool = [...shuffle(mustPlay), ...canPlayShuffled];
           selected = [];
           for (const p of mustPlay) { if (selected.length < playersNeeded) selected.push(p); }
-          const remaining = pool.filter((p) => !selected.includes(p) && !mustRest.includes(p));
+          remaining = pool.filter((p) => !selected.includes(p) && !mustRest.includes(p));
           for (const p of remaining) { if (selected.length >= playersNeeded) break; if (!selected.includes(p)) selected.push(p); }
         }
 
@@ -391,6 +393,7 @@
       const [players, setPlayers] = useState(() => loadState("bp-players", []));
       const [nameInput, setNameInput] = useState("");
       const [genderInput, setGenderInput] = useState("M");
+      const [totalMinutes, setTotalMinutes] = useState(() => loadState("bp-totalMinutes", DEFAULT_TOTAL_MINUTES));
       const [gameMinutes, setGameMinutes] = useState(() => loadState("bp-gameMinutes", DEFAULT_GAME_MINUTES));
       const [numCourts, setNumCourts] = useState(() => loadState("bp-numCourts", 1));
       const [extraCourt, setExtraCourt] = useState(() => loadState("bp-extraCourt", { enabled: false, startMin: 60, durationMin: 90 }));
@@ -418,7 +421,7 @@
       const [editSelected, setEditSelected] = useState(new Set()); // player names selected to play
       const scheduleRef = useRef(null);
 
-      const totalSlots = Math.floor(TOTAL_MINUTES / gameMinutes);
+      const totalSlots = Math.floor(totalMinutes / gameMinutes);
 
       // Load win-loss from Firebase on mount (merge with localStorage)
       useEffect(() => {
@@ -451,6 +454,7 @@
         }
       }, [winLoss, isAdmin]);
       useEffect(() => { localStorage.setItem("bp-players", JSON.stringify(players)); }, [players]);
+      useEffect(() => { localStorage.setItem("bp-totalMinutes", JSON.stringify(totalMinutes)); }, [totalMinutes]);
       useEffect(() => { localStorage.setItem("bp-gameMinutes", JSON.stringify(gameMinutes)); }, [gameMinutes]);
       useEffect(() => { localStorage.setItem("bp-numCourts", JSON.stringify(numCourts)); }, [numCourts]);
       useEffect(() => { localStorage.setItem("bp-extraCourt", JSON.stringify(extraCourt)); }, [extraCourt]);
@@ -817,7 +821,7 @@
               <div>
                 <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Match Planner</h1>
                 <p style={{ color: C.textDim, fontSize: 13, margin: "6px 0 0" }}>
-                  3 hrs · {totalSlots} slots × {gameMinutes} min · {numCourts} court{numCourts > 1 ? "s" : ""}{extraCourt.enabled ? ` +1 extra (${extraCourt.startMin}–${extraCourt.startMin + extraCourt.durationMin}m)` : ""}
+                  {Math.floor(totalMinutes / 60)}h{totalMinutes % 60 ? `${totalMinutes % 60}m` : ''} · {totalSlots} slots × {gameMinutes} min · {numCourts} court{numCourts > 1 ? "s" : ""}{extraCourt.enabled ? ` +1 extra (${extraCourt.startMin}–${extraCourt.startMin + extraCourt.durationMin}m)` : ""}
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
@@ -849,6 +853,15 @@
                     <button onClick={() => setSessionStart("")}
                       style={{ background: "none", border: "none", color: C.textMuted, fontSize: 15, padding: 0, lineHeight: 1 }}>×</button>
                   )}
+                </div>
+              </div>
+              <div style={{ flex: "1 1 180px" }}>
+                <label style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.5px" }}>Session length</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                  <input type="range" min={60} max={210} step={gameMinutes} value={totalMinutes}
+                    onChange={(e) => { setTotalMinutes(+e.target.value); setResult(null); }}
+                    style={{ flex: 1, accentColor: C.accent }} />
+                  <span style={{ fontSize: 14, color: C.accent, fontWeight: 600, minWidth: 48, textAlign: "right" }}>{Math.floor(totalMinutes / 60)}h{totalMinutes % 60 ? `${totalMinutes % 60}m` : ''}</span>
                 </div>
               </div>
               <div style={{ flex: "1 1 180px" }}>
@@ -887,11 +900,11 @@
                       }}>{extraCourt.enabled ? "ON" : "OFF"}</button>
                     {extraCourt.enabled && (<>
                       <span style={{ fontSize: 11, color: C.textDim }}>@</span>
-                      <input type="number" min={0} max={TOTAL_MINUTES - gameMinutes} step={gameMinutes} value={extraCourt.startMin}
+                      <input type="number" min={0} max={totalMinutes - gameMinutes} step={gameMinutes} value={extraCourt.startMin}
                         onChange={e => { setExtraCourt(ec => ({ ...ec, startMin: +e.target.value })); setResult(null); }}
                         style={{ width: 44, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "5px 6px", color: C.text, fontSize: 12, fontFamily: font, textAlign: "center" }} />
                       <span style={{ fontSize: 11, color: C.textDim }}>m for</span>
-                      <input type="number" min={gameMinutes} max={TOTAL_MINUTES} step={gameMinutes} value={extraCourt.durationMin}
+                      <input type="number" min={gameMinutes} max={totalMinutes} step={gameMinutes} value={extraCourt.durationMin}
                         onChange={e => { setExtraCourt(ec => ({ ...ec, durationMin: +e.target.value })); setResult(null); }}
                         style={{ width: 44, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "5px 6px", color: C.text, fontSize: 12, fontFamily: font, textAlign: "center" }} />
                       <span style={{ fontSize: 11, color: C.textDim }}>m</span>
@@ -1049,12 +1062,10 @@
             {/* Action Buttons */}
             {players.length >= 4 && (
               <div className="action-buttons">
-                {!result && (
-                  <button onClick={() => setShowImport(true)}
-                    style={{ background: 'transparent', color: C.textDim, border: `1px dashed ${C.border}`, borderRadius: 8, padding: "14px 16px", fontSize: 13, fontFamily: font }}>
-                    Import
-                  </button>
-                )}
+                <button onClick={() => setShowImport(true)}
+                  style={{ background: 'transparent', color: C.textDim, border: `1px dashed ${C.border}`, borderRadius: 8, padding: "14px 16px", fontSize: 13, fontFamily: font }}>
+                  Import
+                </button>
                 <button className="generate-btn" onClick={generate} disabled={isGenerating}
                   style={{
                     flex: 1, background: `linear-gradient(135deg, ${C.accentDim}, ${C.pinkDim})`,
