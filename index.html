@@ -457,7 +457,6 @@
       const [importError, setImportError] = useState('');
       const [editingSlot, setEditingSlot] = useState(null); // slot number (1-based) being edited
       const [editLayout, setEditLayout] = useState(null); // { courts: [[name,name,name,name], ...], sitting: [name, ...] }
-      const [swapFirst, setSwapFirst] = useState(null); // name of player picked for swap
       const scheduleRef = useRef(null);
 
       const totalSlots = Math.floor(totalMinutes / gameMinutes);
@@ -709,14 +708,12 @@
           sitting: s.sitting.map(p => p.name),
         };
         setEditLayout(layout);
-        setSwapFirst(null);
         setEditingSlot(slotNum);
       }, [result]);
 
-      const swapInLayout = useCallback((name) => {
+      // Swap the player at `pos` with wherever `newName` currently is.
+      const assignToPosition = useCallback((pos, newName) => {
         if (!editLayout) return;
-        if (!swapFirst) { setSwapFirst(name); return; }
-        if (swapFirst === name) { setSwapFirst(null); return; }
         const findPos = (n) => {
           for (let ci = 0; ci < editLayout.courts.length; ci++) {
             const idx = editLayout.courts[ci].indexOf(n);
@@ -726,17 +723,16 @@
           if (si >= 0) return { type: "sit", idx: si };
           return null;
         };
-        const pa = findPos(swapFirst), pb = findPos(name);
-        if (!pa || !pb) { setSwapFirst(null); return; }
+        const other = findPos(newName);
+        if (!other) return;
         const courts = editLayout.courts.map(c => [...c]);
         const sitting = [...editLayout.sitting];
         const get = (p) => p.type === "court" ? courts[p.ci][p.idx] : sitting[p.idx];
         const set = (p, v) => { if (p.type === "court") courts[p.ci][p.idx] = v; else sitting[p.idx] = v; };
-        const av = get(pa), bv = get(pb);
-        set(pa, bv); set(pb, av);
+        const av = get(pos), bv = get(other);
+        set(pos, bv); set(other, av);
         setEditLayout({ courts, sitting });
-        setSwapFirst(null);
-      }, [editLayout, swapFirst]);
+      }, [editLayout]);
 
       const applySlotEdit = useCallback(() => {
         if (!editingSlot || !result || !editLayout) return;
@@ -760,7 +756,6 @@
         setResult(newResult);
         setEditingSlot(null);
         setEditLayout(null);
-        setSwapFirst(null);
         setCopied(false);
       }, [editingSlot, editLayout, result, players, totalSlots, getPlayersWithAvailability, computeSkill, getCourtsPerSlot]);
 
@@ -1258,7 +1253,7 @@
                                 style={{ background: C.accentDim, color: "#fff", border: "none", borderRadius: 6, padding: "8px 14px", fontSize: 13, fontWeight: 700, fontFamily: font, minHeight: 36 }}>
                                 Apply
                               </button>
-                              <button onClick={() => { setEditingSlot(null); setEditLayout(null); setSwapFirst(null); }}
+                              <button onClick={() => { setEditingSlot(null); setEditLayout(null); }}
                                 style={{ background: C.card, color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px", fontSize: 13, fontFamily: font, minHeight: 36 }}>
                                 Cancel
                               </button>
@@ -1273,33 +1268,35 @@
                         </div>
                       </div>
 
-                      {/* Edit mode: swap interface */}
+                      {/* Edit mode: per-position dropdowns */}
                       {editingSlot === s.slot && editLayout && (() => {
                         const genderByName = new Map([
                           ...s.courts.flatMap(c => [...c.teamA, ...c.teamB]),
                           ...s.sitting,
                         ].map(p => [p.name, p.gender]));
-                        const chip = (name, inTeam) => {
-                          const g = genderByName.get(name);
-                          const isPicked = swapFirst === name;
+                        const allNames = [...editLayout.courts.flat(), ...editLayout.sitting];
+                        const slotPicker = (pos, currentName) => {
+                          const g = genderByName.get(currentName);
                           const color = g === "F" ? C.pink : C.accent;
                           return (
-                            <button key={name} onClick={() => swapInLayout(name)}
+                            <select value={currentName}
+                              onChange={(e) => assignToPosition(pos, e.target.value)}
                               style={{
-                                background: isPicked ? color : (inTeam ? "rgba(255,255,255,0.04)" : C.bg),
-                                color: isPicked ? "#fff" : color,
-                                border: `1.5px solid ${isPicked ? color : (g === "F" ? C.pinkDim : C.accentDim)}`,
-                                borderRadius: 16, padding: "8px 14px", fontSize: 14, fontWeight: 600,
-                                fontFamily: font, cursor: "pointer", minHeight: 36,
+                                background: C.bg, color: color,
+                                border: `1.5px solid ${g === "F" ? C.pinkDim : C.accentDim}`,
+                                borderRadius: 8, padding: "8px 10px", fontSize: 14, fontWeight: 600,
+                                fontFamily: font, minHeight: 38, minWidth: 92,
                               }}>
-                              {name}
-                            </button>
+                              {allNames.map(name => (
+                                <option key={name} value={name}>{name}</option>
+                              ))}
+                            </select>
                           );
                         };
                         return (
                           <div style={{ marginBottom: 12 }}>
-                            <p style={{ fontSize: 11, color: swapFirst ? C.amber : C.textDim, marginBottom: 8, fontWeight: 600 }}>
-                              {swapFirst ? `Swapping ${swapFirst} — click another to swap` : "Click two players to swap positions"}
+                            <p style={{ fontSize: 11, color: C.textDim, marginBottom: 8, fontWeight: 600 }}>
+                              Tap any name to swap with another player
                             </p>
                             {editLayout.courts.map((court, ci) => (
                               <div key={ci} style={{
@@ -1311,19 +1308,25 @@
                                     Court {ci + 1}
                                   </div>
                                 )}
-                                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
-                                  <div style={{ display: "flex", gap: 4 }}>{chip(court[0], true)}{chip(court[1], true)}</div>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexWrap: "wrap" }}>
+                                  <div style={{ display: "flex", gap: 4 }}>
+                                    {slotPicker({ type: "court", ci, idx: 0 }, court[0])}
+                                    {slotPicker({ type: "court", ci, idx: 1 }, court[1])}
+                                  </div>
                                   <span style={{ color: C.textMuted, fontSize: 11, fontWeight: 700 }}>VS</span>
-                                  <div style={{ display: "flex", gap: 4 }}>{chip(court[2], true)}{chip(court[3], true)}</div>
+                                  <div style={{ display: "flex", gap: 4 }}>
+                                    {slotPicker({ type: "court", ci, idx: 2 }, court[2])}
+                                    {slotPicker({ type: "court", ci, idx: 3 }, court[3])}
+                                  </div>
                                 </div>
                               </div>
                             ))}
                             {editLayout.sitting.length > 0 && (
-                              <div style={{ marginTop: 6 }}>
-                                <span style={{ fontSize: 11, color: C.textMuted, marginRight: 6 }}>Sit:</span>
-                                <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 4, verticalAlign: "middle" }}>
-                                  {editLayout.sitting.map(name => chip(name, false))}
-                                </span>
+                              <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+                                <span style={{ fontSize: 11, color: C.textMuted }}>Sit:</span>
+                                {editLayout.sitting.map((name, si) => (
+                                  <span key={si}>{slotPicker({ type: "sit", idx: si }, name)}</span>
+                                ))}
                               </div>
                             )}
                           </div>
