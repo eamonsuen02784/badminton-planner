@@ -156,9 +156,50 @@
         // Phase 1 — Player selection
         // If this is the first slot being generated and a forced selection was provided,
         // skip the normal selection algorithm and use the manually chosen players.
+        // forcedFirstSlot can be:
+        //   - number[]            — flat list of selected player indices (auto-pair)
+        //   - { courts: [[...]] } — explicit court layout, skip phase 1-3 entirely
+        const isForcedSlot = forcedFirstSlot && slot === startFrom;
+        const isForcedCourts = isForcedSlot && !Array.isArray(forcedFirstSlot) && forcedFirstSlot.courts;
+
+        if (isForcedCourts) {
+          // Fully forced — accept user's court assignments as-is
+          const courtsForced = forcedFirstSlot.courts;
+          const selectedForced = courtsForced.flat();
+          const courts = [];
+          for (let c = 0; c < courtsForced.length; c++) {
+            const [a1, a2, b1, b2] = courtsForced[c];
+            courts.push({
+              court: c + 1,
+              teamA: [players[a1], players[a2]],
+              teamB: [players[b1], players[b2]],
+            });
+            partnerCount[a1][a2]++; partnerCount[a2][a1]++;
+            partnerCount[b1][b2]++; partnerCount[b2][b1]++;
+            for (const x of [a1, a2]) for (const y of [b1, b2]) { opponentCount[x][y]++; opponentCount[y][x]++; }
+            const genders = [players[a1].gender, players[a2].gender, players[b1].gender, players[b2].gender];
+            if (genders.every(g => g === "F")) womenDoublesCount++;
+          }
+          const playingSet = new Set(selectedForced);
+          for (let i = 0; i < n; i++) {
+            const isAvail = available.includes(i);
+            if (playingSet.has(i)) { gamesPlayed[i]++; consecutivePlayed[i]++; consecutiveRested[i] = 0; }
+            else if (isAvail) { consecutiveRested[i]++; consecutivePlayed[i] = 0; }
+          }
+          const sitting = available.filter((i) => !playingSet.has(i)).map((i) => players[i]);
+          const playerState = players.map((p, i) => ({
+            name: p.name, gender: p.gender, total: gamesPlayed[i],
+            conPlayed: consecutivePlayed[i], conRested: consecutiveRested[i],
+            playing: playingSet.has(i), available: available.includes(i),
+          }));
+          schedule.push({ slot: slot + 1, courts, sitting, playerState });
+          yield { schedule: [...schedule], gamesPlayed: [...gamesPlayed] };
+          continue;
+        }
+
         let selected;
         let remaining = [];
-        if (forcedFirstSlot && slot === startFrom) {
+        if (isForcedSlot && Array.isArray(forcedFirstSlot)) {
           selected = forcedFirstSlot.filter(i => available.includes(i));
           remaining = available.filter(i => !selected.includes(i) && !mustRest.includes(i));
         } else {
@@ -186,8 +227,9 @@
 
         // ── Gender balance: ensure even F count so courts can be distributed
         // as 2F+2M or 4M (never 3F+1M or 1F+3M which force MF vs MM/FF).
+        // Skip if the slot is forced — respect user's explicit selection even if uneven.
         const selFCount = selected.filter(i => players[i].gender === "F").length;
-        if (selFCount % 2 !== 0) {
+        if (!isForcedSlot && selFCount % 2 !== 0) {
           // Odd F — try swapping one non-mustPlay F out for an unselected M
           const swappableF = selected.filter(i => players[i].gender === "F" && !mustPlay.includes(i));
           const unselM = remaining.filter(i => players[i].gender === "M" && !selected.includes(i));
@@ -414,7 +456,8 @@
       const [importText, setImportText] = useState('');
       const [importError, setImportError] = useState('');
       const [editingSlot, setEditingSlot] = useState(null); // slot number (1-based) being edited
-      const [editSelected, setEditSelected] = useState(new Set()); // player names selected to play
+      const [editLayout, setEditLayout] = useState(null); // { courts: [[name,name,name,name], ...], sitting: [name, ...] }
+      const [swapFirst, setSwapFirst] = useState(null); // name of player picked for swap
       const scheduleRef = useRef(null);
 
       const totalSlots = Math.floor(totalMinutes / gameMinutes);
@@ -661,22 +704,50 @@
       const startSlotEdit = useCallback((slotNum) => {
         const s = result?.schedule.find(s => s.slot === slotNum);
         if (!s) return;
-        const playing = new Set(s.courts.flatMap(c => [...c.teamA, ...c.teamB].map(p => p.name)));
-        setEditSelected(playing);
+        const layout = {
+          courts: s.courts.map(c => [...c.teamA.map(p => p.name), ...c.teamB.map(p => p.name)]),
+          sitting: s.sitting.map(p => p.name),
+        };
+        setEditLayout(layout);
+        setSwapFirst(null);
         setEditingSlot(slotNum);
       }, [result]);
 
+      const swapInLayout = useCallback((name) => {
+        if (!editLayout) return;
+        if (!swapFirst) { setSwapFirst(name); return; }
+        if (swapFirst === name) { setSwapFirst(null); return; }
+        const findPos = (n) => {
+          for (let ci = 0; ci < editLayout.courts.length; ci++) {
+            const idx = editLayout.courts[ci].indexOf(n);
+            if (idx >= 0) return { type: "court", ci, idx };
+          }
+          const si = editLayout.sitting.indexOf(n);
+          if (si >= 0) return { type: "sit", idx: si };
+          return null;
+        };
+        const pa = findPos(swapFirst), pb = findPos(name);
+        if (!pa || !pb) { setSwapFirst(null); return; }
+        const courts = editLayout.courts.map(c => [...c]);
+        const sitting = [...editLayout.sitting];
+        const get = (p) => p.type === "court" ? courts[p.ci][p.idx] : sitting[p.idx];
+        const set = (p, v) => { if (p.type === "court") courts[p.ci][p.idx] = v; else sitting[p.idx] = v; };
+        const av = get(pa), bv = get(pb);
+        set(pa, bv); set(pb, av);
+        setEditLayout({ courts, sitting });
+        setSwapFirst(null);
+      }, [editLayout, swapFirst]);
+
       const applySlotEdit = useCallback(() => {
-        if (!editingSlot || !result) return;
+        if (!editingSlot || !result || !editLayout) return;
         const slotIdx = editingSlot - 1; // 0-based
         const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
         const keptSlots = result.schedule.slice(0, slotIdx);
         const state = extractState(keptSlots, playersWithSkill);
-        // Map selected player names → player indices
-        const forcedIndices = playersWithSkill
-          .map((p, i) => editSelected.has(p.name) ? i : -1)
-          .filter(i => i >= 0);
-        const newResult = generateSchedule(playersWithSkill, totalSlots, getCourtsPerSlot(), slotIdx, state, forcedIndices);
+        const nameToIdx = new Map(playersWithSkill.map((p, i) => [p.name, i]));
+        const courtsForced = editLayout.courts.map(court => court.map(n => nameToIdx.get(n)).filter(i => i !== undefined));
+        if (courtsForced.some(c => c.length !== 4)) return;
+        const newResult = generateSchedule(playersWithSkill, totalSlots, getCourtsPerSlot(), slotIdx, state, { courts: courtsForced });
         if (!newResult) return;
         setScores(prev => {
           const next = {};
@@ -688,9 +759,10 @@
         });
         setResult(newResult);
         setEditingSlot(null);
-        setEditSelected(new Set());
+        setEditLayout(null);
+        setSwapFirst(null);
         setCopied(false);
-      }, [editingSlot, editSelected, result, players, totalSlots, getPlayersWithAvailability, computeSkill, getCourtsPerSlot]);
+      }, [editingSlot, editLayout, result, players, totalSlots, getPlayersWithAvailability, computeSkill, getCourtsPerSlot]);
 
       const copySchedule = useCallback(() => {
         if (!result) return;
@@ -1185,7 +1257,7 @@
                                 style={{ background: C.accentDim, color: "#fff", border: "none", borderRadius: 5, padding: "3px 10px", fontSize: 11, fontWeight: 700, fontFamily: font }}>
                                 Apply
                               </button>
-                              <button onClick={() => { setEditingSlot(null); setEditSelected(new Set()); }}
+                              <button onClick={() => { setEditingSlot(null); setEditLayout(null); setSwapFirst(null); }}
                                 style={{ background: C.card, color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 5, padding: "3px 8px", fontSize: 11, fontFamily: font }}>
                                 Cancel
                               </button>
@@ -1200,43 +1272,64 @@
                         </div>
                       </div>
 
-                      {/* Edit mode: player selection */}
-                      {editingSlot === s.slot && (() => {
-                        const allAvail = [...s.courts.flatMap(c => [...c.teamA, ...c.teamB]), ...s.sitting];
-                        const courtsThisSlot = s.courts.length || 1;
-                        const needed = courtsThisSlot * 4;
-                        const selCount = allAvail.filter(p => editSelected.has(p.name)).length;
+                      {/* Edit mode: swap interface */}
+                      {editingSlot === s.slot && editLayout && (() => {
+                        const genderByName = new Map([
+                          ...s.courts.flatMap(c => [...c.teamA, ...c.teamB]),
+                          ...s.sitting,
+                        ].map(p => [p.name, p.gender]));
+                        const chip = (name, inTeam) => {
+                          const g = genderByName.get(name);
+                          const isPicked = swapFirst === name;
+                          const color = g === "F" ? C.pink : C.accent;
+                          return (
+                            <button key={name} onClick={() => swapInLayout(name)}
+                              style={{
+                                background: isPicked ? color : (inTeam ? "rgba(255,255,255,0.04)" : C.bg),
+                                color: isPicked ? "#fff" : color,
+                                border: `1.5px solid ${isPicked ? color : (g === "F" ? C.pinkDim : C.accentDim)}`,
+                                borderRadius: 14, padding: "4px 10px", fontSize: 13, fontWeight: 600,
+                                fontFamily: font, cursor: "pointer",
+                              }}>
+                              {name}
+                            </button>
+                          );
+                        };
                         return (
                           <div style={{ marginBottom: 12 }}>
-                            <p style={{ fontSize: 11, color: selCount === needed ? C.green : C.amber, marginBottom: 6, fontWeight: 600 }}>
-                              Select {needed} players to play — {selCount}/{needed} selected
+                            <p style={{ fontSize: 11, color: swapFirst ? C.amber : C.textDim, marginBottom: 8, fontWeight: 600 }}>
+                              {swapFirst ? `Swapping ${swapFirst} — click another to swap` : "Click two players to swap positions"}
                             </p>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                              {allAvail.map((p, pi) => {
-                                const on = editSelected.has(p.name);
-                                return (
-                                  <button key={pi} onClick={() => setEditSelected(prev => {
-                                    const next = new Set(prev);
-                                    if (on) next.delete(p.name); else next.add(p.name);
-                                    return next;
-                                  })}
-                                    style={{
-                                      background: on ? C.accentDim : C.bg,
-                                      color: on ? "#fff" : C.textMuted,
-                                      border: `1px solid ${on ? C.accent : C.border}`,
-                                      borderRadius: 16, padding: "4px 12px", fontSize: 12,
-                                      fontWeight: on ? 700 : 400, fontFamily: font,
-                                    }}>
-                                    {p.name}
-                                  </button>
-                                );
-                              })}
-                            </div>
+                            {editLayout.courts.map((court, ci) => (
+                              <div key={ci} style={{
+                                background: COURT_BG[ci], borderLeft: `3px solid ${COURT_COLORS[ci]}`,
+                                borderRadius: 6, padding: "8px 10px", marginBottom: 6,
+                              }}>
+                                {editLayout.courts.length > 1 && (
+                                  <div style={{ fontSize: 10, color: COURT_COLORS[ci], fontWeight: 700, marginBottom: 4, textTransform: "uppercase" }}>
+                                    Court {ci + 1}
+                                  </div>
+                                )}
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
+                                  <div style={{ display: "flex", gap: 4 }}>{chip(court[0], true)}{chip(court[1], true)}</div>
+                                  <span style={{ color: C.textMuted, fontSize: 11, fontWeight: 700 }}>VS</span>
+                                  <div style={{ display: "flex", gap: 4 }}>{chip(court[2], true)}{chip(court[3], true)}</div>
+                                </div>
+                              </div>
+                            ))}
+                            {editLayout.sitting.length > 0 && (
+                              <div style={{ marginTop: 6 }}>
+                                <span style={{ fontSize: 11, color: C.textMuted, marginRight: 6 }}>Sit:</span>
+                                <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 4, verticalAlign: "middle" }}>
+                                  {editLayout.sitting.map(name => chip(name, false))}
+                                </span>
+                              </div>
+                            )}
                           </div>
                         );
                       })()}
 
-                      {s.courts.map((court, ci) => (
+                      {editingSlot !== s.slot && s.courts.map((court, ci) => (
                         <div key={ci} style={{
                           background: COURT_BG[ci], borderLeft: `3px solid ${COURT_COLORS[ci]}`,
                           borderRadius: 6, padding: "8px 10px", marginBottom: ci < s.courts.length - 1 ? 6 : 0,
@@ -1301,7 +1394,7 @@
                         <div style={{ textAlign: "center", padding: 10, color: C.textMuted, fontSize: 12 }}>Not enough players</div>
                       )}
 
-                      {s.sitting && s.sitting.length > 0 && (
+                      {editingSlot !== s.slot && s.sitting && s.sitting.length > 0 && (
                         <div style={{ marginTop: 8, textAlign: "center" }}>
                           <span style={{ fontSize: 12, color: C.textMuted }}>Sit: {s.sitting.map((p) => p.name).join(", ")}</span>
                         </div>

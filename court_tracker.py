@@ -318,30 +318,34 @@ SIGNUP_ROSTER = [
 SIGNUP_FIXED = ["Eamon", "Jialin"]  # always pre-filled at the top
 
 
-def build_signup_list() -> str | None:
-    """
-    Build a Thursday sign-up message for the next booked Wednesday session.
-    Returns None if no upcoming booking is found.
-    """
+def build_signup_list() -> str:
+    """Build a Thursday sign-up message for the next Wednesday session."""
     bookings = fetch_bkbc_bookings()
-    if not bookings:
-        return None
 
-    # Use the earliest upcoming booking
-    b = bookings[0]
-    dt = datetime.strptime(b["date"], "%Y-%m-%d")
-    day_str = dt.strftime("%-d/%-m")  # e.g. "25/3"
+    if bookings:
+        b = bookings[0]
+        dt = datetime.strptime(b["date"], "%Y-%m-%d")
+        day_str = dt.strftime("%-d/%-m")
+        court_part = f"Court {b['court']}" if b["court"] else "court TBD"
+        time_part  = b["time"] or "7 PM"
+        header = f"Wednesday {day_str} {time_part}–10pm\n{court_part}\n"
+    else:
+        # No booking yet — use next Wednesday
+        today = date.today()
+        days_until_wed = (2 - today.weekday()) % 7 or 7
+        next_wed = today + timedelta(days=days_until_wed)
+        day_str = next_wed.strftime("%-d/%-m")
+        header = f"Wednesday {day_str}\n"
 
-    court_part = f"Court {b['court']}" if b["court"] else "court TBD"
-    time_part  = b["time"] or "7 PM"
-
-    header = f"Wednesday {day_str} {time_part}–10pm\n{court_part}\n"
-
-    # Eamon and Jialin are always slots 1 & 2; rest are blank
+    # Slots 1–8 guaranteed, 9+ triggers extra court
     lines = []
     for i, name in enumerate(SIGNUP_FIXED, start=1):
         lines.append(f"{i}.     {name}")
-    for i in range(len(SIGNUP_FIXED) + 1, len(SIGNUP_ROSTER) + 1):
+    for i in range(len(SIGNUP_FIXED) + 1, 9):
+        lines.append(f"{i}.")
+    lines.append("---")
+    lines.append("If 9+ we'll book an extra court!")
+    for i in range(9, len(SIGNUP_ROSTER) + 1):
         lines.append(f"{i}.")
 
     return header + "\n".join(lines)
@@ -357,14 +361,11 @@ def main():
     args = parser.parse_args()
 
     if args.report:
-        tg  = TelegramClient.from_env()
+        tg  = TelegramClient.badminton()
         msg = build_signup_list()
-        if msg:
-            print("Sending sign-up list to Telegram…")
-            print(msg)
-            tg.send(msg)
-        else:
-            print("No upcoming bookings found — nothing to send.")
+        print("Sending sign-up list to Telegram…")
+        print(msg)
+        tg.send(msg)
         return
 
     if args.history:
@@ -383,7 +384,7 @@ def main():
 
     print("Checking BKBC Wednesday night availability…")
     state = _state_mgr.load()
-    tg    = TelegramClient.from_env()
+    tg    = TelegramClient.badminton()
 
     # Process incoming Telegram commands first
     wants_status = process_commands(state, tg)
