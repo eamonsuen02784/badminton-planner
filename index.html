@@ -1023,13 +1023,14 @@
               <input value={nameInput} onChange={(e) => setNameInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addPlayer()} placeholder="Player name"
                 style={{ flex: 1, background: C.card, border: `1px solid ${C.border}`, borderRadius: 6, padding: "10px 14px", color: C.text, fontSize: 14, fontFamily: font, outline: "none" }} />
-              <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: `1px solid ${C.border}` }}>
+              <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: `1px solid ${C.border}`, flexShrink: 0 }}>
                 {["M", "F"].map((g) => (
                   <button key={g} onClick={() => setGenderInput(g)}
                     style={{
                       background: genderInput === g ? (g === "M" ? C.accentDim : C.pinkDim) : C.card,
-                      color: genderInput === g ? "#fff" : C.textDim,
-                      border: "none", padding: "10px 16px", fontSize: 13, fontWeight: 600, fontFamily: font,
+                      color: genderInput === g ? "#fff" : (g === "M" ? C.accent : C.pink),
+                      border: "none", padding: "10px 0", minWidth: 48, fontSize: 18, fontWeight: 700, fontFamily: font,
+                      opacity: genderInput === g ? 1 : 0.6,
                     }}>{g === "M" ? "♂" : "♀"}</button>
                 ))}
               </div>
@@ -1252,20 +1253,20 @@
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <span style={{ fontSize: 12, color: C.textMuted }}>{slotTime(s.slot)}</span>
                           {editingSlot === s.slot ? (
-                            <div style={{ display: "flex", gap: 4 }}>
+                            <div style={{ display: "flex", gap: 6 }}>
                               <button onClick={applySlotEdit}
-                                style={{ background: C.accentDim, color: "#fff", border: "none", borderRadius: 5, padding: "3px 10px", fontSize: 11, fontWeight: 700, fontFamily: font }}>
+                                style={{ background: C.accentDim, color: "#fff", border: "none", borderRadius: 6, padding: "8px 14px", fontSize: 13, fontWeight: 700, fontFamily: font, minHeight: 36 }}>
                                 Apply
                               </button>
                               <button onClick={() => { setEditingSlot(null); setEditLayout(null); setSwapFirst(null); }}
-                                style={{ background: C.card, color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 5, padding: "3px 8px", fontSize: 11, fontFamily: font }}>
+                                style={{ background: C.card, color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px", fontSize: 13, fontFamily: font, minHeight: 36 }}>
                                 Cancel
                               </button>
                             </div>
                           ) : (
                             <button onClick={() => startSlotEdit(s.slot)}
                               title="Edit who plays in this slot"
-                              style={{ background: "none", border: "none", color: C.textMuted, fontSize: 13, padding: "2px 4px", lineHeight: 1, cursor: "pointer" }}>
+                              style={{ background: "none", border: "none", color: C.textMuted, fontSize: 18, padding: "6px 10px", lineHeight: 1, cursor: "pointer", minHeight: 36, minWidth: 36 }}>
                               ✏️
                             </button>
                           )}
@@ -1288,8 +1289,8 @@
                                 background: isPicked ? color : (inTeam ? "rgba(255,255,255,0.04)" : C.bg),
                                 color: isPicked ? "#fff" : color,
                                 border: `1.5px solid ${isPicked ? color : (g === "F" ? C.pinkDim : C.accentDim)}`,
-                                borderRadius: 14, padding: "4px 10px", fontSize: 13, fontWeight: 600,
-                                fontFamily: font, cursor: "pointer",
+                                borderRadius: 16, padding: "8px 14px", fontSize: 14, fontWeight: 600,
+                                fontFamily: font, cursor: "pointer", minHeight: 36,
                               }}>
                               {name}
                             </button>
