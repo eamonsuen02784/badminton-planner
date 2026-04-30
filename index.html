@@ -441,6 +441,7 @@
       const [scores, setScores] = useState(() => loadState("bp-scores", {}));
       const [winLoss, setWinLoss] = useState(() => loadState("bp-winloss", {}));
       const [fromSlot, setFromSlot] = useState(1);
+      const [fromSlotCourts, setFromSlotCourts] = useState(0); // 0 = use global numCourts
       const [copied, setCopied] = useState(false);
       const [saved, setSaved] = useState(false);
       const [isGenerating, setIsGenerating] = useState(false);
@@ -705,7 +706,11 @@
         const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
         const keptSlots = result.schedule.slice(0, fromSlot - 1);
         const state = extractState(keptSlots, playersWithSkill);
-        const newResult = generateSchedule(playersWithSkill, totalSlots, getCourtsPerSlot(), fromSlot - 1, state);
+        const courtsArr = getCourtsPerSlot();
+        if (fromSlotCourts > 0) {
+          for (let i = fromSlot - 1; i < totalSlots; i++) courtsArr[i] = fromSlotCourts;
+        }
+        const newResult = generateSchedule(playersWithSkill, totalSlots, courtsArr, fromSlot - 1, state);
         if (!newResult) return;
         setScores(prev => {
           const next = {};
@@ -717,7 +722,7 @@
         });
         setResult(newResult);
         setCopied(false);
-      }, [players, totalSlots, numCourts, extraCourt, fromSlot, result, getPlayersWithAvailability, computeSkill, getCourtsPerSlot]);
+      }, [players, totalSlots, numCourts, extraCourt, fromSlot, fromSlotCourts, result, getPlayersWithAvailability, computeSkill, getCourtsPerSlot]);
 
       const clearSchedule = useCallback(() => {
         setResult(null); setScores({}); setFromSlot(1);
@@ -1259,17 +1264,29 @@
             {/* Re-generate from slot */}
             {result && (
               <div style={{
-                display: "flex", alignItems: "center", gap: 8, marginBottom: 16,
+                display: "flex", alignItems: "center", gap: 8, marginBottom: 16, flexWrap: "wrap",
                 background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px",
               }}>
-                <span style={{ fontSize: 12, color: C.textDim, flex: 1 }}>Player in/out? Re-generate from slot</span>
+                <span style={{ fontSize: 12, color: C.textDim }}>Re-generate from slot</span>
                 <input type="number" min={1} max={totalSlots} value={fromSlot}
                   onChange={e => setFromSlot(Math.min(totalSlots, Math.max(1, +e.target.value)))}
                   style={{
                     width: 48, background: C.bg, border: `1px solid ${C.border}`,
                     borderRadius: 4, padding: "4px 6px", color: C.text, fontSize: 13, fontFamily: font, textAlign: "center",
                   }} />
-                <span style={{ fontSize: 12, color: C.textDim }}>onwards</span>
+                <span style={{ fontSize: 12, color: C.textDim }}>with</span>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {[0, 1, 2, 3].map(n => (
+                    <button key={n} onClick={() => setFromSlotCourts(n)}
+                      style={{
+                        padding: "4px 8px", fontSize: 12, fontWeight: 600, fontFamily: font,
+                        borderRadius: 4, border: `1px solid ${fromSlotCourts === n ? C.accent : C.border}`,
+                        background: fromSlotCourts === n ? C.accentDim : C.bg,
+                        color: fromSlotCourts === n ? "#fff" : C.textDim, cursor: "pointer",
+                      }}>{n === 0 ? "auto" : `${n}C`}</button>
+                  ))}
+                </div>
+                <span style={{ fontSize: 12, color: C.textDim, flex: 1 }}>courts onwards</span>
                 <button onClick={regenerateRemaining}
                   style={{
                     background: C.accentDim, color: "#fff", border: "none",
