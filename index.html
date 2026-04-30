@@ -455,6 +455,10 @@
       const [showImport, setShowImport] = useState(false);
       const [importText, setImportText] = useState('');
       const [importError, setImportError] = useState('');
+      const [savedPlans, setSavedPlans] = useState(() => loadState("bp-saved-plans", []));
+      const [showSavePlan, setShowSavePlan] = useState(false);
+      const [saveTag, setSaveTag] = useState('');
+      const [showSavedList, setShowSavedList] = useState(false);
       const [editingSlot, setEditingSlot] = useState(null); // slot number (1-based) being edited
       const [editLayout, setEditLayout] = useState(null); // { courts: [[name,name,name,name], ...], sitting: [name, ...] }
       const scheduleRef = useRef(null);
@@ -508,6 +512,25 @@
           localStorage.removeItem("bp-result");
         }
       }, [result]);
+      useEffect(() => { localStorage.setItem("bp-saved-plans", JSON.stringify(savedPlans)); }, [savedPlans]);
+
+      const savePlan = useCallback(() => {
+        if (!result || !saveTag.trim()) return;
+        const id = Date.now();
+        setSavedPlans(prev => [{ id, tag: saveTag.trim(), result, savedAt: new Date().toISOString() }, ...prev]);
+        setShowSavePlan(false);
+        setSaveTag('');
+      }, [result, saveTag]);
+
+      const loadPlan = useCallback((plan) => {
+        setResult(plan.result);
+        setScores({});
+        setShowSavedList(false);
+      }, []);
+
+      const deletePlan = useCallback((id) => {
+        setSavedPlans(prev => prev.filter(p => p.id !== id));
+      }, []);
 
       const getCourtsPerSlot = useCallback(() => {
         return Array.from({ length: totalSlots }, (_, slot) => {
@@ -861,6 +884,25 @@
               </div>
             )}
 
+            {/* Save plan modal */}
+            {showSavePlan && (
+              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, width: '100%', maxWidth: 400 }}>
+                  <p style={{ fontWeight: 700, marginBottom: 12 }}>Save this plan</p>
+                  <input autoFocus value={saveTag} onChange={e => setSaveTag(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') savePlan(); if (e.key === 'Escape') setShowSavePlan(false); }}
+                    placeholder="e.g. Wed 30/4 · 8 players"
+                    style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px', color: C.text, fontSize: 14, fontFamily: font, boxSizing: 'border-box' }} />
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                    <button onClick={savePlan} disabled={!saveTag.trim()}
+                      style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '10px', fontWeight: 700, fontFamily: font, opacity: saveTag.trim() ? 1 : 0.4 }}>Save</button>
+                    <button onClick={() => setShowSavePlan(false)}
+                      style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px 16px', fontFamily: font }}>Cancel</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Import modal */}
             {showImport && (
               <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
@@ -1159,11 +1201,50 @@
                     }}><LucideIcon name="download" size={15} /></button>
                 )}
                 {result && (
+                  <button onClick={() => { setSaveTag(''); setShowSavePlan(true); }} title="Save plan with tag"
+                    style={{
+                      background: C.card, color: C.text, border: `1px solid ${C.border}`,
+                      borderRadius: 8, padding: "14px 16px", fontFamily: font, minWidth: 52,
+                    }}><LucideIcon name="bookmark" size={15} /></button>
+                )}
+                {result && (
                   <button onClick={clearSchedule} title="Clear saved schedule"
                     style={{
                       background: C.card, color: C.textMuted, border: `1px solid ${C.border}`,
                       borderRadius: 8, padding: "14px 16px", fontFamily: font, minWidth: 52,
                     }}><LucideIcon name="trash" size={15} /></button>
+                )}
+              </div>
+            )}
+
+            {/* Saved plans list */}
+            {savedPlans.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <button onClick={() => setShowSavedList(s => !s)}
+                  style={{ background: 'none', border: 'none', color: C.textDim, fontFamily: font, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0' }}>
+                  <LucideIcon name={showSavedList ? "chevron-up" : "chevron-down"} size={13} />
+                  {savedPlans.length} saved plan{savedPlans.length > 1 ? 's' : ''}
+                </button>
+                {showSavedList && (
+                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {savedPlans.map(plan => (
+                      <div key={plan.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px' }}>
+                        <LucideIcon name="bookmark" size={13} style={{ color: C.accent, flexShrink: 0 }} />
+                        <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{plan.tag}</span>
+                        <span style={{ fontSize: 11, color: C.textDim }}>
+                          {new Date(plan.savedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                        </span>
+                        <button onClick={() => loadPlan(plan)}
+                          style={{ background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '5px 10px', fontSize: 12, fontWeight: 600, fontFamily: font, cursor: 'pointer' }}>
+                          Load
+                        </button>
+                        <button onClick={() => deletePlan(plan.id)}
+                          style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}>
+                          <LucideIcon name="x" size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
