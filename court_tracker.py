@@ -63,7 +63,7 @@ COURT_IDS = [
 ]
 
 ET                = ZoneInfo("America/New_York")
-AFTER_HOUR        = 19   # 7 PM ET  (inclusive)
+AFTER_HOUR        = 20   # 8 PM ET  (inclusive — catches 8:30 PM slots)
 LATEST_START_HOUR = 21   # 9 PM ET  (inclusive — slots starting after 9 PM are excluded)
 WEEKS_AHEAD       = 8
 
@@ -327,15 +327,15 @@ def build_signup_list() -> str:
         dt = datetime.strptime(b["date"], "%Y-%m-%d")
         day_str = dt.strftime("%-d/%-m")
         court_part = f"Court {b['court']}" if b["court"] else "court TBD"
-        time_part  = b["time"] or "7 PM"
-        header = f"Wednesday {day_str} {time_part}–10pm\n{court_part}\n"
+        time_part  = b["time"] or "8:30pm"
+        header = f"Wednesday {day_str} {time_part}–11:30pm\n{court_part}\n"
     else:
         # No booking yet — use next Wednesday
         today = date.today()
         days_until_wed = (2 - today.weekday()) % 7 or 7
         next_wed = today + timedelta(days=days_until_wed)
         day_str = next_wed.strftime("%-d/%-m")
-        header = f"Wednesday {day_str}\n"
+        header = f"Wednesday {day_str} 8:30pm–11:30pm\n"
 
     # Slots 1–8 guaranteed, 9+ triggers extra court
     lines = []
