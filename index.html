@@ -369,7 +369,6 @@
       const consecutiveRested = new Array(n).fill(0);
       const partnerCount = Array.from({ length: n }, () => new Array(n).fill(0));
       const opponentCount = Array.from({ length: n }, () => new Array(n).fill(0));
-
       if (keptSlots.length > 0) {
         const lastState = keptSlots[keptSlots.length - 1].playerState;
         lastState.forEach(ps => {
