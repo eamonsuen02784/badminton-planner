@@ -409,11 +409,15 @@
     const font = "'Inter', system-ui, sans-serif";
 
     const ICONS = {
-      shuffle:  ["M16 3h5v5", "M4 20 21 3", "M21 16v5h-5", "M15 15l6 6", "M4 4l5 5"],
-      copy:     ["M9 9h13v13H9z", "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"],
-      download: ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M7 10l5 5 5-5", "M12 15V3"],
-      trash:    ["M3 6h18", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"],
-      check:    ["M20 6 9 17l-5-5"],
+      shuffle:      ["M16 3h5v5", "M4 20 21 3", "M21 16v5h-5", "M15 15l6 6", "M4 4l5 5"],
+      copy:         ["M9 9h13v13H9z", "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"],
+      download:     ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M7 10l5 5 5-5", "M12 15V3"],
+      trash:        ["M3 6h18", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"],
+      check:        ["M20 6 9 17l-5-5"],
+      bookmark:     ["M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"],
+      "chevron-up": ["M18 15l-6-6-6 6"],
+      "chevron-down":["M6 9l6 6 6-6"],
+      x:            ["M18 6 6 18", "M6 6l12 12"],
     };
 
     const LucideIcon = ({ name, size = 16 }) => (
@@ -1534,8 +1538,25 @@
       );
     }
 
+    class ErrorBoundary extends React.Component {
+      constructor(props) { super(props); this.state = { error: null }; }
+      static getDerivedStateFromError(e) { return { error: e }; }
+      render() {
+        if (this.state.error) {
+          return (
+            <div style={{ padding: 32, color: '#fff', fontFamily: 'monospace', background: '#0a0f1a', minHeight: '100vh' }}>
+              <h2 style={{ color: '#f87171', marginBottom: 16 }}>Render error</h2>
+              <pre style={{ whiteSpace: 'pre-wrap', fontSize: 13, color: '#fca5a5' }}>{this.state.error.toString()}</pre>
+              <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, color: '#94a3b8', marginTop: 12 }}>{this.state.error.stack}</pre>
+            </div>
+          );
+        }
+        return this.props.children;
+      }
+    }
+
     const root = ReactDOM.createRoot(document.getElementById("root"));
-    root.render(<BadmintonPlanner />);
+    root.render(<ErrorBoundary><BadmintonPlanner /></ErrorBoundary>);
   </script>
 </body>
 </html>
