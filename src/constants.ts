@@ -1,0 +1,54 @@
+import type { Player } from './algorithm/types';
+
+export const DEFAULT_TOTAL_MINUTES = 180;
+export const DEFAULT_GAME_MINUTES = 15;
+
+export const DEFAULT_PLAYERS: Player[] = [
+  { name: 'Eamon', gender: 'M', skill: 2, availFrom: 0, availTo: 0, group: 'full', leavesAt: null },
+  { name: 'Jialin', gender: 'F', skill: 2, availFrom: 0, availTo: 0, group: 'full', leavesAt: null },
+  { name: 'Mindy', gender: 'F', skill: 2, availFrom: 0, availTo: 0, group: 'full', leavesAt: null },
+  { name: 'Yuta', gender: 'M', skill: 2, availFrom: 0, availTo: 0, group: 'full', leavesAt: null },
+  { name: 'Jae', gender: 'M', skill: 2, availFrom: 0, availTo: 0, group: 'full', leavesAt: null },
+  { name: 'Jess', gender: 'F', skill: 2, availFrom: 0, availTo: 0, group: 'full', leavesAt: null },
+  { name: 'Edwin', gender: 'M', skill: 2, availFrom: 0, availTo: 0, group: 'full', leavesAt: null },
+  { name: 'Stanley', gender: 'M', skill: 2, availFrom: 0, availTo: 0, group: 'full', leavesAt: null },
+  { name: 'Kayleen', gender: 'F', skill: 2, availFrom: 0, availTo: 0, group: 'full', leavesAt: null },
+  { name: 'Ricky', gender: 'M', skill: 2, availFrom: 0, availTo: 0, group: 'full', leavesAt: null },
+  { name: 'Tim', gender: 'M', skill: 2, availFrom: 0, availTo: 0, group: 'full', leavesAt: null },
+  { name: 'Henry', gender: 'M', skill: 2, availFrom: 0, availTo: 0, group: 'full', leavesAt: null },
+];
+
+export const C = {
+  bg: '#0a0f1a',
+  card: '#111827',
+  border: '#1e293b',
+  accent: '#22d3ee',
+  accentDim: '#0e7490',
+  pink: '#f472b6',
+  pinkDim: '#9d174d',
+  text: '#e2e8f0',
+  textDim: '#64748b',
+  textMuted: '#475569',
+  green: '#34d399',
+  amber: '#fbbf24',
+};
+
+export const COURT_COLORS = ['#22d3ee', '#a78bfa', '#fb923c'];
+export const COURT_BG = ['rgba(34,211,238,0.08)', 'rgba(167,139,250,0.08)', 'rgba(251,146,60,0.08)'];
+export const FONT = "'Inter', system-ui, sans-serif";
+
+export const ICONS: Record<string, string[]> = {
+  shuffle: ['M16 3h5v5', 'M4 20 21 3', 'M21 16v5h-5', 'M15 15l6 6', 'M4 4l5 5'],
+  copy: ['M9 9h13v13H9z', 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'],
+  download: ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', 'M7 10l5 5 5-5', 'M12 15V3'],
+  trash: ['M3 6h18', 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2'],
+  check: ['M20 6 9 17l-5-5'],
+  bookmark: ['M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z'],
+  'chevron-up': ['M18 15l-6-6-6 6'],
+  'chevron-down': ['M6 9l6 6 6-6'],
+  x: ['M18 6 6 18', 'M6 6l12 12'],
+  link: [
+    'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71',
+    'M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71',
+  ],
+};
