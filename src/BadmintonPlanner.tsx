@@ -1,0 +1,1385 @@
+// @ts-nocheck
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { generateSchedule, generateScheduleGen, extractState } from './algorithm/scheduler';
+
+const DEFAULT_TOTAL_MINUTES = 180;
+const DEFAULT_GAME_MINUTES = 15;
+
+const DEFAULT_PLAYERS = [
+  { name: "Eamon",   gender: "M", skill: 2 }, { name: "Jialin",  gender: "F", skill: 2 },
+  { name: "Mindy",   gender: "F", skill: 2 }, { name: "Yuta",    gender: "M", skill: 2 },
+  { name: "Jae",     gender: "M", skill: 2 }, { name: "Jess",    gender: "F", skill: 2 },
+  { name: "Edwin",   gender: "M", skill: 2 }, { name: "Stanley", gender: "M", skill: 2 },
+  { name: "Kayleen", gender: "F", skill: 2 }, { name: "Ricky",   gender: "M", skill: 2 },
+  { name: "Tim",     gender: "M", skill: 2 }, { name: "Henry",   gender: "M", skill: 2 },
+];
+
+// ─── Utilities ───────────────────────────────────────────────────────────────
+
+function isValidBadmintonScore(a, b) {
+  if (a === b || a < 0 || b < 0) return false;
+  const hi = Math.max(a, b), lo = Math.min(a, b);
+  if (hi === 21 && lo <= 19) return true;
+  if (hi >= 22 && lo >= 20 && hi - lo === 2) return true;
+  if (hi === 30 && lo === 29) return true;
+  return false;
+}
+
+const loadState = (key, fallback) => {
+  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
+  catch { return fallback; }
+};
+
+// ─── Colors ──────────────────────────────────────────────────────────────────
+
+const C = {
+  bg: "#0a0f1a", card: "#111827", border: "#1e293b",
+  accent: "#22d3ee", accentDim: "#0e7490",
+  pink: "#f472b6", pinkDim: "#9d174d",
+  text: "#e2e8f0", textDim: "#64748b", textMuted: "#475569",
+  green: "#34d399", amber: "#fbbf24",
+};
+
+const COURT_COLORS = ["#22d3ee", "#a78bfa", "#fb923c"];
+const COURT_BG = ["rgba(34,211,238,0.08)", "rgba(167,139,250,0.08)", "rgba(251,146,60,0.08)"];
+const font = "'Inter', system-ui, sans-serif";
+
+const ICONS = {
+  shuffle:      ["M16 3h5v5", "M4 20 21 3", "M21 16v5h-5", "M15 15l6 6", "M4 4l5 5"],
+  copy:         ["M9 9h13v13H9z", "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"],
+  download:     ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M7 10l5 5 5-5", "M12 15V3"],
+  trash:        ["M3 6h18", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"],
+  check:        ["M20 6 9 17l-5-5"],
+  bookmark:     ["M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"],
+  "chevron-up": ["M18 15l-6-6-6 6"],
+  "chevron-down":["M6 9l6 6 6-6"],
+  x:            ["M18 6 6 18", "M6 6l12 12"],
+  link:         ["M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71", "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"],
+};
+
+const LucideIcon = ({ name, size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+    style={{ display: "inline-block", verticalAlign: "middle", flexShrink: 0 }}>
+    {ICONS[name].map((d, i) => <path key={i} d={d} />)}
+  </svg>
+);
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
+function BadmintonPlanner() {
+  const [players, setPlayers] = useState(() => loadState("bp-players", []));
+  const [nameInput, setNameInput] = useState("");
+  const [genderInput, setGenderInput] = useState("M");
+  const [totalMinutes, setTotalMinutes] = useState(() => loadState("bp-totalMinutes", DEFAULT_TOTAL_MINUTES));
+  const [gameMinutes, setGameMinutes] = useState(() => loadState("bp-gameMinutes", DEFAULT_GAME_MINUTES));
+  const [numCourts, setNumCourts] = useState(() => loadState("bp-numCourts", 1));
+  const [extraCourt, setExtraCourt] = useState(() => loadState("bp-extraCourt", { enabled: false, startMin: 60, durationMin: 90 }));
+  const [staggerMode, setStaggerMode] = useState(() => loadState("bp-staggerMode", "none"));
+  const [sessionStart, setSessionStart] = useState(() => loadState("bp-sessionStart", ""));
+  const [result, setResult] = useState(() => loadState("bp-result", null));
+  const [scores, setScores] = useState(() => loadState("bp-scores", {}));
+  const [winLoss, setWinLoss] = useState(() => loadState("bp-winloss", {}));
+  const [fromSlot, setFromSlot] = useState(1);
+  const [fromSlotCourts, setFromSlotCourts] = useState(0); // 0 = use global numCourts
+  const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [genSlot, setGenSlot] = useState(0);
+  const [dbSynced, setDbSynced] = useState(null); // null | 'syncing' | 'synced' | 'error'
+  const [isAdmin, setIsAdmin] = useState(() =>
+    !window.ADMIN_PIN || sessionStorage.getItem('bp-admin') === window.ADMIN_PIN
+  );
+  const [showPinPrompt, setShowPinPrompt] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importError, setImportError] = useState('');
+  const [savedPlans, setSavedPlans] = useState(() => loadState("bp-saved-plans", []));
+  const [showSavePlan, setShowSavePlan] = useState(false);
+  const [saveTag, setSaveTag] = useState('');
+  const [showSavedList, setShowSavedList] = useState(false);
+  const [editingSlot, setEditingSlot] = useState(null); // slot number (1-based) being edited
+  const [editLayout, setEditLayout] = useState(null); // { courts: [[name,name,name,name], ...], sitting: [name, ...] }
+  const [pendingShare, setPendingShare] = useState(null);
+  const [showShareLoad, setShowShareLoad] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [sharedUrl, setSharedUrl] = useState('');
+  const [copiedShareUrl, setCopiedShareUrl] = useState(false);
+  const scheduleRef = useRef(null);
+
+  const totalSlots = Math.floor(totalMinutes / gameMinutes);
+
+  // Load win-loss from Firebase on mount (merge with localStorage)
+  useEffect(() => {
+    if (!window.DB) return;
+    window.DB.load().then(remote => {
+      setWinLoss(local => {
+        const merged = { ...local };
+        for (const [name, data] of Object.entries(remote)) {
+          if (!merged[name]) merged[name] = data;
+          else merged[name] = {
+            wins:   Math.max(merged[name].wins   ?? 0, data.wins   ?? 0),
+            losses: Math.max(merged[name].losses ?? 0, data.losses ?? 0),
+          };
+        }
+        return merged;
+      });
+      setDbSynced('synced');
+    }).catch(() => setDbSynced('error'));
+  }, []);
+
+  // Persist state to localStorage (and Firebase for winLoss)
+  useEffect(() => { localStorage.setItem("bp-scores", JSON.stringify(scores)); }, [scores]);
+  useEffect(() => {
+    localStorage.setItem("bp-winloss", JSON.stringify(winLoss));
+    if (window.DB && isAdmin) {
+      setDbSynced('syncing');
+      window.DB.save(winLoss)
+        .then(() => setDbSynced('synced'))
+        .catch(() => setDbSynced('error'));
+    }
+  }, [winLoss, isAdmin]);
+  useEffect(() => { localStorage.setItem("bp-players", JSON.stringify(players)); }, [players]);
+  useEffect(() => { localStorage.setItem("bp-totalMinutes", JSON.stringify(totalMinutes)); }, [totalMinutes]);
+  useEffect(() => { localStorage.setItem("bp-gameMinutes", JSON.stringify(gameMinutes)); }, [gameMinutes]);
+  useEffect(() => { localStorage.setItem("bp-numCourts", JSON.stringify(numCourts)); }, [numCourts]);
+  useEffect(() => { localStorage.setItem("bp-extraCourt", JSON.stringify(extraCourt)); }, [extraCourt]);
+  useEffect(() => { localStorage.setItem("bp-staggerMode", JSON.stringify(staggerMode)); }, [staggerMode]);
+  useEffect(() => { localStorage.setItem("bp-sessionStart", JSON.stringify(sessionStart)); }, [sessionStart]);
+  useEffect(() => {
+    if (result) {
+      localStorage.setItem("bp-result", JSON.stringify(result));
+      setSaved(true);
+      const t = setTimeout(() => setSaved(false), 2000);
+      return () => clearTimeout(t);
+    } else {
+      localStorage.removeItem("bp-result");
+    }
+  }, [result]);
+  useEffect(() => { localStorage.setItem("bp-saved-plans", JSON.stringify(savedPlans)); }, [savedPlans]);
+
+  const savePlan = useCallback(() => {
+    if (!result || !saveTag.trim()) return;
+    const id = Date.now();
+    setSavedPlans(prev => [{ id, tag: saveTag.trim(), result, savedAt: new Date().toISOString() }, ...prev]);
+    setShowSavePlan(false);
+    setSaveTag('');
+  }, [result, saveTag]);
+
+  const loadPlan = useCallback((plan) => {
+    setResult(plan.result);
+    setScores({});
+    setShowSavedList(false);
+  }, []);
+
+  const deletePlan = useCallback((id) => {
+    setSavedPlans(prev => prev.filter(p => p.id !== id));
+  }, []);
+
+  // Detect share hash on mount
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash.startsWith('#share=')) return;
+    try {
+      const data = JSON.parse(atob(hash.slice(7)));
+      if (data.v === 1 && data.p && data.slots) {
+        setPendingShare(data);
+        setShowShareLoad(true);
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    } catch (e) {}
+  }, []);
+
+  const shareLink = useCallback(() => {
+    if (!result) return;
+    const pwith = getPlayersWithAvailability();
+    const data = {
+      v: 1,
+      p: pwith.map(p => [p.name, p.gender]),
+      cfg: { g: gameMinutes, c: numCourts },
+      slots: result.schedule.map(s => ({
+        s: s.slot,
+        c: s.courts.map(court => [
+          court.teamA.map(p => pwith.findIndex(pl => pl.name === p.name)),
+          court.teamB.map(p => pwith.findIndex(pl => pl.name === p.name)),
+        ]),
+        sit: (s.sitting || []).map(p => pwith.findIndex(pl => pl.name === p.name)),
+      })),
+    };
+    const encoded = btoa(JSON.stringify(data));
+    const url = `${window.location.origin}${window.location.pathname}#share=${encoded}`;
+    const ta = document.createElement("textarea");
+    ta.value = url; ta.style.position = "fixed"; ta.style.left = "-9999px";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    document.body.removeChild(ta);
+    setSharedUrl(url);
+    setCopiedShareUrl(true);
+    setShowShareModal(true);
+    setTimeout(() => setCopiedShareUrl(false), 2000);
+  }, [result, getPlayersWithAvailability, gameMinutes, numCourts]);
+
+  const loadSharedSchedule = useCallback(() => {
+    if (!pendingShare) return;
+    const { p: sp, cfg, slots } = pendingShare;
+    const n = sp.length;
+    const gp = new Array(n).fill(0);
+    const cp = new Array(n).fill(0);
+    const cr = new Array(n).fill(0);
+    const newSchedule = slots.map(slot => {
+      const playing = new Set(slot.c.flat(2));
+      for (let i = 0; i < n; i++) {
+        if (playing.has(i)) { gp[i]++; cp[i]++; cr[i] = 0; }
+        else { cr[i]++; cp[i] = 0; }
+      }
+      return {
+        slot: slot.s,
+        courts: slot.c.map((court, ci) => ({
+          court: ci + 1,
+          teamA: court[0].map(i => ({ name: sp[i][0], gender: sp[i][1] })),
+          teamB: court[1].map(i => ({ name: sp[i][0], gender: sp[i][1] })),
+        })),
+        sitting: slot.sit.map(i => ({ name: sp[i][0], gender: sp[i][1] })),
+        playerState: sp.map(([name, gender], i) => ({
+          name, gender, total: gp[i], conPlayed: cp[i], conRested: cr[i],
+          playing: playing.has(i), available: true,
+        })),
+        repeatedCourts: [],
+      };
+    });
+    const newPlayers = sp.map(([name, gender]) => ({
+      name, gender, skill: 2, availFrom: 0, availTo: slots.length - 1, group: "full", leavesAt: null,
+    }));
+    setPlayers(newPlayers);
+    if (cfg?.g) setGameMinutes(cfg.g);
+    if (cfg?.c) setNumCourts(cfg.c);
+    setResult({ schedule: newSchedule, gamesPlayed: [...gp] });
+    setScores({});
+    setShowShareLoad(false);
+    setPendingShare(null);
+  }, [pendingShare]);
+
+  const getCourtsPerSlot = useCallback(() => {
+    return Array.from({ length: totalSlots }, (_, slot) => {
+      const slotStartMin = slot * gameMinutes;
+      const slotEndMin = slotStartMin + gameMinutes;
+      let courts = numCourts;
+      if (extraCourt.enabled) {
+        const extraEnd = extraCourt.startMin + extraCourt.durationMin;
+        if (slotStartMin < extraEnd && slotEndMin > extraCourt.startMin) courts++;
+      }
+      return Math.min(courts, 3);
+    });
+  }, [totalSlots, gameMinutes, numCourts, extraCourt]);
+
+  const getPlayersWithAvailability = useCallback(() => {
+    const midSlot = Math.floor(totalSlots / 2);
+    const overlap = Math.max(1, Math.floor(totalSlots * 0.2));
+    return players.map((p) => {
+      let r;
+      if (staggerMode === "none") r = { ...p, availFrom: 0, availTo: totalSlots - 1 };
+      else if (staggerMode === "group") {
+        if (p.group === "early") r = { ...p, availFrom: 0, availTo: midSlot + overlap - 1 };
+        else if (p.group === "late") r = { ...p, availFrom: midSlot - overlap, availTo: totalSlots - 1 };
+        else r = { ...p, availFrom: 0, availTo: totalSlots - 1 };
+      } else {
+        r = p;
+      }
+      if (p.leavesAt != null) r = { ...r, availTo: Math.min(r.availTo, p.leavesAt) };
+      return r;
+    });
+  }, [players, staggerMode, totalSlots]);
+
+  const loadDefaults = useCallback(() => {
+    const existing = new Set(players.map((p) => p.name.toLowerCase()));
+    const toAdd = DEFAULT_PLAYERS.filter((p) => !existing.has(p.name.toLowerCase()));
+    if (toAdd.length === 0) return;
+    setPlayers((prev) => [
+      ...prev,
+      ...toAdd.map((p) => ({ ...p, skill: p.skill ?? 2, availFrom: 0, availTo: totalSlots - 1, group: "full", leavesAt: null })),
+    ]);
+    setResult(null);
+  }, [players, totalSlots]);
+
+  const resetPlayers = useCallback(() => {
+    setPlayers(DEFAULT_PLAYERS.map((p) => ({ ...p, availFrom: 0, availTo: totalSlots - 1, group: "full" })));
+    setResult(null);
+  }, [totalSlots]);
+
+  const clearPlayers = useCallback(() => {
+    setPlayers([]); setResult(null);
+  }, []);
+
+  const addPlayer = useCallback(() => {
+    const name = nameInput.trim();
+    if (!name || players.find((p) => p.name.toLowerCase() === name.toLowerCase())) return;
+    setPlayers((prev) => [...prev, { name, gender: genderInput, skill: 2, availFrom: 0, availTo: totalSlots - 1, group: "full", leavesAt: null }]);
+    setNameInput("");
+  }, [nameInput, genderInput, players, totalSlots]);
+
+  const removePlayer = useCallback((idx) => {
+    setPlayers((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
+
+  const updatePlayer = useCallback((idx, field, value) => {
+    setPlayers((prev) => prev.map((p, i) => i === idx ? { ...p, [field]: value } : p)); setResult(null);
+  }, []);
+
+  const submitPin = useCallback(() => {
+    if (pinInput === window.ADMIN_PIN) {
+      sessionStorage.setItem('bp-admin', pinInput);
+      setIsAdmin(true); setShowPinPrompt(false); setPinInput(''); setPinError(false);
+    } else { setPinError(true); }
+  }, [pinInput]);
+
+  const clearWinLoss = useCallback(() => {
+    setWinLoss({});
+    if (window.DB && isAdmin) window.DB.save({});
+  }, [isAdmin]);
+
+  // Parse the human-readable copied schedule text back into a result object
+  const parseScheduleText = useCallback((text) => {
+    const playerMap = Object.fromEntries(players.map(p => [p.name.toLowerCase(), p]));
+    const resolve = (name) => playerMap[name.toLowerCase()] || { name, gender: '?' };
+    const slots = [];
+    let cur = null;
+    for (const raw of text.split('\n')) {
+      const line = raw.trim();
+      const slotM = line.match(/^--- Slot (\d+) .* ---$/);
+      if (slotM) { if (cur) slots.push(cur); cur = { slot: +slotM[1], courts: [], sitting: [] }; continue; }
+      if (!cur) continue;
+      const courtM = line.match(/^(?:Court (\d+): )?(.+?)\s{2}vs\s{2}(.+)$/);
+      if (courtM) {
+        const courtNum = courtM[1] ? +courtM[1] : cur.courts.length + 1;
+        cur.courts.push({
+          court: courtNum,
+          teamA: courtM[2].split('&').map(n => resolve(n.trim())),
+          teamB: courtM[3].split('&').map(n => resolve(n.trim())),
+        });
+        continue;
+      }
+      const sitM = line.match(/^Sit: (.+)$/);
+      if (sitM) cur.sitting = sitM[1].split(',').map(n => resolve(n.trim()));
+    }
+    if (cur) slots.push(cur);
+    return slots.length > 0 ? { schedule: slots, gamesPlayed: players.map(() => 0) } : null;
+  }, [players]);
+
+  const importSchedule = useCallback(() => {
+    const parsed = parseScheduleText(importText);
+    if (!parsed) { setImportError('Could not parse schedule — paste the full copied text.'); return; }
+    setResult(parsed); setScores({}); setShowImport(false); setImportText(''); setImportError('');
+  }, [importText, parseScheduleText]);
+
+  const computeSkill = useCallback((name) => {
+    const wl = winLoss[name];
+    if (!wl || wl.wins + wl.losses === 0) return 0.5;
+    return wl.wins / (wl.wins + wl.losses);
+  }, [winLoss]);
+
+  const updateScore = useCallback((slot, courtIdx, aVal, bVal, teamA, teamB) => {
+    if (!isAdmin) return;
+    const key = `s${slot}c${courtIdx}`;
+    const aNum = parseInt(aVal), bNum = parseInt(bVal);
+    const valid = !isNaN(aNum) && !isNaN(bNum) && isValidBadmintonScore(aNum, bNum);
+
+    setScores(prev => {
+      const prevEntry = prev[key];
+      if (prevEntry?.applied || valid) {
+        setWinLoss(wl => {
+          const next = JSON.parse(JSON.stringify(wl));
+          if (prevEntry?.applied) {
+            const pA = parseInt(prevEntry.a), pB = parseInt(prevEntry.b);
+            const w = pA > pB ? prevEntry.teamA : prevEntry.teamB;
+            const l = pA > pB ? prevEntry.teamB : prevEntry.teamA;
+            w.forEach(n => { if (next[n]) next[n].wins = Math.max(0, next[n].wins - 1); });
+            l.forEach(n => { if (next[n]) next[n].losses = Math.max(0, next[n].losses - 1); });
+          }
+          if (valid) {
+            const w = aNum > bNum ? teamA : teamB;
+            const l = aNum > bNum ? teamB : teamA;
+            w.forEach(n => { next[n] = { wins: (next[n]?.wins ?? 0) + 1, losses: next[n]?.losses ?? 0 }; });
+            l.forEach(n => { next[n] = { wins: next[n]?.wins ?? 0, losses: (next[n]?.losses ?? 0) + 1 }; });
+          }
+          return next;
+        });
+      }
+      return { ...prev, [key]: { a: aVal, b: bVal, applied: valid, teamA, teamB } };
+    });
+  }, [isAdmin]);
+
+  const generate = useCallback(() => {
+    if (players.length < 4 || isGenerating) return;
+    setIsGenerating(true);
+    setResult(null);
+    setScores({});
+    setCopied(false);
+    setGenSlot(0);
+    const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
+    const gen = generateScheduleGen(playersWithSkill, totalSlots, getCourtsPerSlot());
+    // Drive the generator with rAF for a live slot counter.
+    // We only update setResult once at the end — calling it on every slot
+    // triggers a full React re-render each time, which at Babel CDN speeds
+    // inflates a 12-slot schedule to 30+ seconds.
+    let lastValue = null;
+    function step() {
+      const { value, done } = gen.next();
+      if (value) { lastValue = value; setGenSlot(value.schedule.length); }
+      if (done) { setResult(lastValue); setIsGenerating(false); }
+      else { requestAnimationFrame(step); }
+    }
+    requestAnimationFrame(step);
+  }, [players, totalSlots, numCourts, extraCourt, isGenerating, getPlayersWithAvailability, computeSkill, getCourtsPerSlot]);
+
+  const regenerateRemaining = useCallback(() => {
+    if (players.length < 4 || !result) return;
+    const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
+    const keptSlots = result.schedule.slice(0, fromSlot - 1);
+    const state = extractState(keptSlots, playersWithSkill);
+    const courtsArr = getCourtsPerSlot();
+    if (fromSlotCourts > 0) {
+      for (let i = fromSlot - 1; i < totalSlots; i++) courtsArr[i] = fromSlotCourts;
+    }
+    const newResult = generateSchedule(playersWithSkill, totalSlots, courtsArr, fromSlot - 1, state);
+    if (!newResult) return;
+    setScores(prev => {
+      const next = {};
+      for (const key in prev) {
+        const m = key.match(/^s(\d+)c/);
+        if (m && parseInt(m[1]) < fromSlot) next[key] = prev[key];
+      }
+      return next;
+    });
+    setResult(newResult);
+    setCopied(false);
+  }, [players, totalSlots, numCourts, extraCourt, fromSlot, fromSlotCourts, result, getPlayersWithAvailability, computeSkill, getCourtsPerSlot]);
+
+  const clearSchedule = useCallback(() => {
+    setResult(null); setScores({}); setFromSlot(1);
+  }, []);
+
+  const startSlotEdit = useCallback((slotNum) => {
+    const s = result?.schedule.find(s => s.slot === slotNum);
+    if (!s) return;
+    const layout = {
+      courts: s.courts.map(c => [...c.teamA.map(p => p.name), ...c.teamB.map(p => p.name)]),
+      sitting: s.sitting.map(p => p.name),
+    };
+    setEditLayout(layout);
+    setEditingSlot(slotNum);
+  }, [result]);
+
+  // Swap the player at `pos` with wherever `newName` currently is.
+  const assignToPosition = useCallback((pos, newName) => {
+    if (!editLayout) return;
+    const findPos = (n) => {
+      for (let ci = 0; ci < editLayout.courts.length; ci++) {
+        const idx = editLayout.courts[ci].indexOf(n);
+        if (idx >= 0) return { type: "court", ci, idx };
+      }
+      const si = editLayout.sitting.indexOf(n);
+      if (si >= 0) return { type: "sit", idx: si };
+      return null;
+    };
+    const other = findPos(newName);
+    if (!other) return;
+    const courts = editLayout.courts.map(c => [...c]);
+    const sitting = [...editLayout.sitting];
+    const get = (p) => p.type === "court" ? courts[p.ci][p.idx] : sitting[p.idx];
+    const set = (p, v) => { if (p.type === "court") courts[p.ci][p.idx] = v; else sitting[p.idx] = v; };
+    const av = get(pos), bv = get(other);
+    set(pos, bv); set(other, av);
+    setEditLayout({ courts, sitting });
+  }, [editLayout]);
+
+  const applySlotEdit = useCallback(() => {
+    if (!editingSlot || !result || !editLayout) return;
+    const slotIdx = editingSlot - 1; // 0-based
+    const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
+    const keptSlots = result.schedule.slice(0, slotIdx);
+    const state = extractState(keptSlots, playersWithSkill);
+    const nameToIdx = new Map(playersWithSkill.map((p, i) => [p.name, i]));
+    const courtsForced = editLayout.courts.map(court => court.map(n => nameToIdx.get(n)).filter(i => i !== undefined));
+    if (courtsForced.some(c => c.length !== 4)) return;
+    const newResult = generateSchedule(playersWithSkill, totalSlots, getCourtsPerSlot(), slotIdx, state, { courts: courtsForced });
+    if (!newResult) return;
+    setScores(prev => {
+      const next = {};
+      for (const key in prev) {
+        const m = key.match(/^s(\d+)c/);
+        if (m && parseInt(m[1]) < editingSlot) next[key] = prev[key];
+      }
+      return next;
+    });
+    setResult(newResult);
+    setEditingSlot(null);
+    setEditLayout(null);
+    setCopied(false);
+  }, [editingSlot, editLayout, result, players, totalSlots, getPlayersWithAvailability, computeSkill, getCourtsPerSlot]);
+
+  const buildCopyText = useCallback((mode) => {
+    if (!result) return "";
+    const hasMultiCourts = result.schedule.some(s => s.courts.length > 1);
+    const courtDesc = extraCourt.enabled
+      ? ` · ${numCourts} court${numCourts > 1 ? "s" : ""} +1 extra (${extraCourt.startMin}–${extraCourt.startMin + extraCourt.durationMin}m)`
+      : numCourts > 1 ? ` × ${numCourts} courts` : "";
+    const lines = [`🏸 Badminton Schedule — ${totalSlots} slots × ${gameMinutes} min${courtDesc}\n`];
+    result.schedule.forEach((s) => {
+      lines.push(`--- Slot ${s.slot} (${slotTime(s.slot)}) ---`);
+      s.courts.forEach((c, ci) => {
+        const tA = c.teamA.map((p) => p.name).join(" & ");
+        const tB = c.teamB.map((p) => p.name).join(" & ");
+        const sc = scores[`s${s.slot}c${ci}`];
+        const scoreStr = sc?.applied ? `  [${sc.a}–${sc.b}]` : "";
+        lines.push(`  ${hasMultiCourts ? `Court ${c.court}: ` : ""}${tA}  vs  ${tB}${scoreStr}`);
+      });
+      if (mode === "full" && s.sitting && s.sitting.length > 0)
+        lines.push(`  Sit: ${s.sitting.map((p) => p.name).join(", ")}`);
+    });
+    if (mode === "full") {
+      lines.push(`\nGames per player:`);
+      players.forEach((p, i) => lines.push(`  ${p.name}: ${result.gamesPlayed[i]}`));
+    }
+    return lines.join("\n");
+  }, [result, players, gameMinutes, totalSlots, numCourts, extraCourt, sessionStart, scores]);
+
+  const doCopy = useCallback((text, setter) => {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.left = "-9999px";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); setter(true); setTimeout(() => setter(false), 2000); } catch (e) {}
+    document.body.removeChild(ta);
+  }, []);
+
+  const [copiedGames, setCopiedGames] = useState(false);
+  const copySchedule = useCallback(() => doCopy(buildCopyText("full"), setCopied), [doCopy, buildCopyText]);
+  const copyGames    = useCallback(() => doCopy(buildCopyText("games"), setCopiedGames), [doCopy, buildCopyText]);
+
+  const saveAsImage = useCallback(async () => {
+    if (!scheduleRef.current) return;
+    if (!window.html2canvas) {
+      await new Promise((res, rej) => {
+        const s = document.createElement("script");
+        s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      });
+    }
+    const canvas = await window.html2canvas(scheduleRef.current, { backgroundColor: C.bg, scale: 2 });
+    const link = document.createElement("a"); link.download = "badminton-schedule.png"; link.href = canvas.toDataURL("image/png"); link.click();
+  }, []);
+
+  const minGames = result ? Math.min(...result.gamesPlayed) : 0;
+  const maxGames = result ? Math.max(...result.gamesPlayed) : 0;
+  const allDefaultsLoaded = DEFAULT_PLAYERS.every((dp) =>
+    players.some((p) => p.name.toLowerCase() === dp.name.toLowerCase())
+  );
+  const hasAppliedScores = result && Object.values(scores).some(s => s.applied);
+
+  // Format a slot's time range — absolute if sessionStart is set, relative otherwise
+  const slotTime = (slotIdx) => {
+    const startMin = (slotIdx - 1) * gameMinutes;
+    const endMin   = slotIdx * gameMinutes;
+    if (!sessionStart) return `~${startMin}–${endMin}m`;
+    const [h, m] = sessionStart.split(':').map(Number);
+    const fmt = (totalMin) => {
+      const d = new Date(2000, 0, 1, h, m + totalMin);
+      const hh = d.getHours(), mm = d.getMinutes();
+      const ampm = hh >= 12 ? 'PM' : 'AM';
+      return `${hh % 12 || 12}:${String(mm).padStart(2, '0')} ${ampm}`;
+    };
+    return `${fmt(startMin)} – ${fmt(endMin)}`;
+  };
+
+  // Skill dot: green >60%, yellow 40-60%, red <40%, grey no data
+  const skillDot = (name) => {
+    const wl = winLoss[name];
+    const total = wl ? (wl.wins ?? 0) + (wl.losses ?? 0) : 0;
+    if (total < 3) return null;
+    const rate = wl.wins / total;
+    const color = rate > 0.6 ? C.green : rate < 0.4 ? '#ef4444' : C.amber;
+    const pct = Math.round(rate * 100);
+    return (
+      <span title={`${pct}% win rate (${total} games)`}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
+        {pct}%
+      </span>
+    );
+  };
+
+  return (
+    <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: font, padding: "24px 16px" }}>
+      <div style={{ maxWidth: 780, margin: "0 auto" }}>
+
+        {/* PIN prompt modal */}
+        {showPinPrompt && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 28, width: 280 }}>
+              <p style={{ fontWeight: 700, marginBottom: 12 }}>Enter admin PIN</p>
+              <input type="password" value={pinInput} onChange={e => { setPinInput(e.target.value); setPinError(false); }}
+                onKeyDown={e => e.key === 'Enter' && submitPin()}
+                autoFocus placeholder="PIN"
+                style={{ width: '100%', background: C.bg, border: `1px solid ${pinError ? '#ef4444' : C.border}`, borderRadius: 6, padding: '8px 10px', color: C.text, fontSize: 14, fontFamily: font, marginBottom: 8 }} />
+              {pinError && <p style={{ color: '#ef4444', fontSize: 11, marginBottom: 8 }}>Incorrect PIN</p>}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={submitPin} style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '8px', fontWeight: 700, fontFamily: font }}>Unlock</button>
+                <button onClick={() => { setShowPinPrompt(false); setPinInput(''); setPinError(false); }} style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 12px', fontFamily: font }}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Save plan modal */}
+        {showSavePlan && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, width: '100%', maxWidth: 400 }}>
+              {window.ADMIN_PIN && !isAdmin ? (
+                <>
+                  <p style={{ fontWeight: 700, marginBottom: 4 }}>PIN required to save</p>
+                  <p style={{ fontSize: 12, color: C.textDim, marginBottom: 12 }}>Enter your admin PIN to save this plan.</p>
+                  <input type="password" autoFocus value={pinInput} onChange={e => setPinInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitPin(); if (e.key === 'Escape') { setShowSavePlan(false); setPinInput(''); setPinError(false); } }}
+                    placeholder="PIN"
+                    style={{ width: '100%', background: C.bg, border: `1px solid ${pinError ? '#ef4444' : C.border}`, borderRadius: 6, padding: '10px', color: C.text, fontSize: 14, fontFamily: font, marginBottom: 8 }} />
+                  {pinError && <p style={{ color: '#ef4444', fontSize: 11, marginBottom: 8 }}>Incorrect PIN</p>}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={submitPin} style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '10px', fontWeight: 700, fontFamily: font }}>Unlock</button>
+                    <button onClick={() => { setShowSavePlan(false); setPinInput(''); setPinError(false); }} style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px 16px', fontFamily: font }}>Cancel</button>
+                  </div>
+                </>
+              ) : (
+              <>
+              <p style={{ fontWeight: 700, marginBottom: 12 }}>Save this plan</p>
+              <input autoFocus value={saveTag} onChange={e => setSaveTag(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') savePlan(); if (e.key === 'Escape') setShowSavePlan(false); }}
+                placeholder="e.g. Wed 30/4 · 8 players"
+                style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px', color: C.text, fontSize: 14, fontFamily: font, boxSizing: 'border-box' }} />
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button onClick={savePlan} disabled={!saveTag.trim()}
+                  style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '10px', fontWeight: 700, fontFamily: font, opacity: saveTag.trim() ? 1 : 0.4 }}>Save</button>
+                <button onClick={() => setShowSavePlan(false)}
+                  style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px 16px', fontFamily: font }}>Cancel</button>
+              </div>
+              </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Share link modal */}
+        {showShareModal && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, width: '100%', maxWidth: 480 }}>
+              <p style={{ fontWeight: 700, marginBottom: 4 }}>Share link</p>
+              <p style={{ fontSize: 12, color: C.textDim, marginBottom: 12 }}>
+                {copiedShareUrl ? '✓ Copied!' : 'Link copied to clipboard.'} Open it on any device to load this schedule.
+              </p>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input readOnly value={sharedUrl}
+                  onFocus={e => e.target.select()}
+                  style={{ flex: 1, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', color: C.textDim, fontSize: 11, fontFamily: 'monospace', minWidth: 0 }} />
+                <button onClick={() => {
+                  const ta = document.createElement("textarea"); ta.value = sharedUrl;
+                  ta.style.position = "fixed"; ta.style.left = "-9999px";
+                  document.body.appendChild(ta); ta.select();
+                  try { document.execCommand("copy"); setCopiedShareUrl(true); setTimeout(() => setCopiedShareUrl(false), 2000); } catch(e) {}
+                  document.body.removeChild(ta);
+                }} style={{ background: copiedShareUrl ? C.green : C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 12px', fontWeight: 700, fontFamily: font, whiteSpace: 'nowrap' }}>
+                  {copiedShareUrl ? '✓ Copied' : 'Copy'}
+                </button>
+              </div>
+              <button onClick={() => setShowShareModal(false)}
+                style={{ marginTop: 12, width: '100%', background: 'transparent', color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px', fontFamily: font }}>
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Load shared schedule modal */}
+        {showShareLoad && pendingShare && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, width: '100%', maxWidth: 400 }}>
+              <p style={{ fontWeight: 700, marginBottom: 4 }}>Load shared schedule?</p>
+              <p style={{ fontSize: 12, color: C.textDim, marginBottom: 16 }}>
+                {pendingShare.p.length} players · {pendingShare.slots.length} slots
+                <br />This will replace your current schedule and player list.
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={loadSharedSchedule}
+                  style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '10px', fontWeight: 700, fontFamily: font }}>Load</button>
+                <button onClick={() => { setShowShareLoad(false); setPendingShare(null); }}
+                  style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px 16px', fontFamily: font }}>Dismiss</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Import modal */}
+        {showImport && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, width: '100%', maxWidth: 520 }}>
+              <p style={{ fontWeight: 700, marginBottom: 8 }}>Import schedule from text</p>
+              <p style={{ fontSize: 12, color: C.textDim, marginBottom: 12 }}>Paste the copied schedule text (the same text you send to the group chat).</p>
+              <textarea value={importText} onChange={e => { setImportText(e.target.value); setImportError(''); }}
+                placeholder="🏸 Badminton Schedule — ..."
+                style={{ width: '100%', height: 200, background: C.bg, border: `1px solid ${importError ? '#ef4444' : C.border}`, borderRadius: 6, padding: '8px 10px', color: C.text, fontSize: 12, fontFamily: font, resize: 'vertical' }} />
+              {importError && <p style={{ color: '#ef4444', fontSize: 11, margin: '4px 0 8px' }}>{importError}</p>}
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button onClick={importSchedule} style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '10px', fontWeight: 700, fontFamily: font }}>Import</button>
+                <button onClick={() => { setShowImport(false); setImportText(''); setImportError(''); }} style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px 16px', fontFamily: font }}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Header */}
+        <div style={{ marginBottom: 28, borderBottom: `1px solid ${C.border}`, paddingBottom: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Match Planner</h1>
+            <p style={{ color: C.textDim, fontSize: 13, margin: "6px 0 0" }}>
+              {Math.floor(totalMinutes / 60)}h{totalMinutes % 60 ? `${totalMinutes % 60}m` : ''} · {totalSlots} slots × {gameMinutes} min · {numCourts} court{numCourts > 1 ? "s" : ""}{extraCourt.enabled ? ` +1 extra (${extraCourt.startMin}–${extraCourt.startMin + extraCourt.durationMin}m)` : ""}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+            {window.DB && (
+              <span title={dbSynced === 'synced' ? 'Win-loss synced to cloud' : dbSynced === 'syncing' ? 'Syncing…' : dbSynced === 'error' ? 'Sync failed' : 'Cloud sync ready'}
+                style={{ fontSize: 13, color: dbSynced === 'synced' ? C.green : dbSynced === 'error' ? '#ef4444' : C.textMuted }}>
+                {dbSynced === 'synced' ? '☁ Synced' : dbSynced === 'syncing' ? '⟳' : dbSynced === 'error' ? '☁ ✗' : '☁'}
+              </span>
+            )}
+            {window.ADMIN_PIN && (
+              <button onClick={() => isAdmin ? (sessionStorage.removeItem('bp-admin'), setIsAdmin(false)) : setShowPinPrompt(true)}
+                title={isAdmin ? 'Click to lock score entry' : 'Click to unlock score entry'}
+                style={{ background: isAdmin ? C.accentDim : C.card, color: isAdmin ? '#fff' : C.textMuted, border: `1px solid ${isAdmin ? 'transparent' : C.border}`, borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 700, fontFamily: font }}>
+                {isAdmin ? '🔓 Admin' : '🔒 Lock'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Settings */}
+        <div className="settings-row">
+          <div style={{ flex: "0 0 auto" }}>
+            <label style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.5px" }}>Start time</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+              <input type="time" value={sessionStart}
+                onChange={e => setSessionStart(e.target.value)}
+                style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "5px 8px", color: sessionStart ? C.text : C.textMuted, fontSize: 13, fontFamily: font }} />
+              {sessionStart && (
+                <button onClick={() => setSessionStart("")}
+                  style={{ background: "none", border: "none", color: C.textMuted, fontSize: 15, padding: 0, lineHeight: 1 }}>×</button>
+              )}
+            </div>
+          </div>
+          <div style={{ flex: "1 1 180px" }}>
+            <label style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.5px" }}>Session length</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+              <input type="range" min={60} max={240} step={gameMinutes} value={totalMinutes}
+                onChange={(e) => { setTotalMinutes(+e.target.value); setResult(null); }}
+                style={{ flex: 1, accentColor: C.accent }} />
+              <span style={{ fontSize: 14, color: C.accent, fontWeight: 600, minWidth: 48, textAlign: "right" }}>{Math.floor(totalMinutes / 60)}h{totalMinutes % 60 ? `${totalMinutes % 60}m` : ''}</span>
+            </div>
+          </div>
+          <div style={{ flex: "1 1 180px" }}>
+            <label style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.5px" }}>Game length</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+              <input type="range" min={8} max={20} value={gameMinutes}
+                onChange={(e) => { setGameMinutes(+e.target.value); setResult(null); }}
+                style={{ flex: 1, accentColor: C.accent }} />
+              <span style={{ fontSize: 14, color: C.accent, fontWeight: 600, minWidth: 48, textAlign: "right" }}>{gameMinutes}m</span>
+            </div>
+          </div>
+          <div style={{ flex: "0 0 auto" }}>
+            <label style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.5px" }}>Courts</label>
+            <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+              {[1, 2, 3].map((nc) => (
+                <button key={nc} onClick={() => { setNumCourts(nc); setResult(null); }}
+                  style={{
+                    background: numCourts === nc ? C.accentDim : C.card,
+                    color: numCourts === nc ? "#fff" : C.textDim,
+                    border: `1px solid ${numCourts === nc ? C.accentDim : C.border}`,
+                    borderRadius: 6, padding: "8px 14px", fontSize: 14, fontWeight: 600, fontFamily: font,
+                  }}>{nc}</button>
+              ))}
+            </div>
+          </div>
+          {numCourts < 3 && (
+            <div style={{ flex: "0 0 auto" }}>
+              <label style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.5px" }}>Extra court</label>
+              <div style={{ display: "flex", gap: 4, marginTop: 4, alignItems: "center" }}>
+                <button onClick={() => { setExtraCourt(ec => ({ ...ec, enabled: !ec.enabled })); setResult(null); }}
+                  style={{
+                    background: extraCourt.enabled ? C.accentDim : C.card,
+                    color: extraCourt.enabled ? "#fff" : C.textDim,
+                    border: `1px solid ${extraCourt.enabled ? C.accentDim : C.border}`,
+                    borderRadius: 6, padding: "8px 14px", fontSize: 13, fontWeight: 600, fontFamily: font,
+                  }}>{extraCourt.enabled ? "ON" : "OFF"}</button>
+                {extraCourt.enabled && (<>
+                  <span style={{ fontSize: 11, color: C.textDim }}>@</span>
+                  <input type="number" min={0} max={totalMinutes - gameMinutes} step={gameMinutes} value={extraCourt.startMin}
+                    onChange={e => { setExtraCourt(ec => ({ ...ec, startMin: +e.target.value })); setResult(null); }}
+                    style={{ width: 44, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "5px 6px", color: C.text, fontSize: 12, fontFamily: font, textAlign: "center" }} />
+                  <span style={{ fontSize: 11, color: C.textDim }}>m for</span>
+                  <input type="number" min={gameMinutes} max={totalMinutes} step={gameMinutes} value={extraCourt.durationMin}
+                    onChange={e => { setExtraCourt(ec => ({ ...ec, durationMin: +e.target.value })); setResult(null); }}
+                    style={{ width: 44, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "5px 6px", color: C.text, fontSize: 12, fontFamily: font, textAlign: "center" }} />
+                  <span style={{ fontSize: 11, color: C.textDim }}>m</span>
+                </>)}
+              </div>
+            </div>
+          )}
+          <div style={{ flex: "1 1 200px" }}>
+            <label style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.5px" }}>Availability</label>
+            <div className="avail-buttons" style={{ display: "flex", gap: 4, marginTop: 4 }}>
+              {[["none", "All here"], ["group", "Early / Late"], ["custom", "Per player"]].map(([val, label]) => (
+                <button key={val} onClick={() => { setStaggerMode(val); setResult(null); }}
+                  style={{
+                    background: staggerMode === val ? C.accentDim : C.card,
+                    color: staggerMode === val ? "#fff" : C.textDim,
+                    border: `1px solid ${staggerMode === val ? C.accentDim : C.border}`,
+                    borderRadius: 6, padding: "8px 10px", fontSize: 12, fontWeight: 600, fontFamily: font, flex: 1,
+                  }}>{label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Empty state */}
+        {players.length === 0 && (
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "24px 20px", marginBottom: 20 }}>
+            <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>How it works</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {[
+                ["1", "Add your players", "Type names below, or load the default roster to get started quickly."],
+                ["2", "Configure the session", "Set game length, number of courts, and whether anyone is arriving late or leaving early."],
+                ["3", "Generate & share", "Hit Generate to get a balanced schedule. Re-roll until you're happy, then copy it to your group chat."],
+              ].map(([num, title, desc]) => (
+                <div key={num} style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, background: "rgba(34,211,238,0.1)", borderRadius: "50%", width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{num}</span>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{title}</p>
+                    <p style={{ fontSize: 12, color: C.textDim, lineHeight: 1.5 }}>{desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Player Input */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <input value={nameInput} onChange={(e) => setNameInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addPlayer()} placeholder="Player name"
+            style={{ flex: 1, background: C.card, border: `1px solid ${C.border}`, borderRadius: 6, padding: "10px 14px", color: C.text, fontSize: 14, fontFamily: font, outline: "none" }} />
+          <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: `1px solid ${C.border}`, flexShrink: 0 }}>
+            {["M", "F"].map((g) => (
+              <button key={g} onClick={() => setGenderInput(g)}
+                style={{
+                  background: genderInput === g ? (g === "M" ? C.accentDim : C.pinkDim) : C.card,
+                  color: genderInput === g ? "#fff" : (g === "M" ? C.accent : C.pink),
+                  border: "none", padding: "10px 0", minWidth: 48, fontSize: 18, fontWeight: 700, fontFamily: font,
+                  opacity: genderInput === g ? 1 : 0.6,
+                }}>{g === "M" ? "♂" : "♀"}</button>
+            ))}
+          </div>
+          <button onClick={addPlayer}
+            style={{ background: C.accent, color: C.bg, border: "none", borderRadius: 6, padding: "10px 18px", fontSize: 13, fontWeight: 700, fontFamily: font }}>
+            ADD
+          </button>
+        </div>
+
+        {/* Load / Reset / Clear */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          {!allDefaultsLoaded && (
+            <button onClick={loadDefaults}
+              style={{
+                flex: 1, background: "transparent", color: C.textDim,
+                border: `1px dashed ${C.border}`, borderRadius: 6,
+                padding: "8px 14px", fontSize: 12, fontFamily: font,
+              }}>
+              + Load defaults {players.length > 0 ? "(merge)" : ""}
+            </button>
+          )}
+          {players.length > 0 && (
+            <button onClick={resetPlayers}
+              style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 600, fontFamily: font }}>
+              RESET
+            </button>
+          )}
+          {players.length > 0 && (
+            <button onClick={clearPlayers}
+              style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 600, fontFamily: font }}>
+              CLEAR
+            </button>
+          )}
+          {Object.keys(winLoss).length > 0 && (
+            <button onClick={clearWinLoss}
+              title="Clear all win-loss records and skill ratings"
+              style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 600, fontFamily: font }}>
+              RESET W/L
+            </button>
+          )}
+        </div>
+
+        {/* Player List */}
+        {players.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
+            {players.map((p, i) => (
+              <div key={i} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px",
+              }}>
+                <span style={{ color: p.gender === "F" ? C.pink : C.accent, fontWeight: 700, fontSize: 14, minWidth: 70 }}>{p.name}</span>
+                <span style={{ fontSize: 11, color: C.textDim }}>{p.gender === "F" ? "♀" : "♂"}</span>
+                {winLoss[p.name] && (winLoss[p.name].wins + winLoss[p.name].losses) > 0 && (
+                  <span style={{ fontSize: 11, color: C.textMuted }}>
+                    {winLoss[p.name].wins}W–{winLoss[p.name].losses}L
+                  </span>
+                )}
+                {skillDot(p.name)}
+
+                {staggerMode === "group" && (
+                  <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
+                    {[["early", "Early"], ["full", "Full"], ["late", "Late"]].map(([val, label]) => (
+                      <button key={val} onClick={() => updatePlayer(i, "group", val)}
+                        style={{
+                          background: p.group === val ? (val === "early" ? "#065f46" : val === "late" ? "#7c2d12" : C.accentDim) : "transparent",
+                          color: p.group === val ? "#fff" : C.textMuted,
+                          border: `1px solid ${p.group === val ? "transparent" : C.border}`,
+                          borderRadius: 4, padding: "3px 8px", fontSize: 11, fontWeight: 600, fontFamily: font,
+                        }}>{label}</button>
+                    ))}
+                  </div>
+                )}
+
+                {staggerMode === "custom" && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: staggerMode === "group" ? 0 : "auto" }}>
+                    <span style={{ fontSize: 11, color: C.textDim }}>Slots</span>
+                    <input type="number" min={1} max={totalSlots} value={p.availFrom + 1}
+                      onChange={(e) => updatePlayer(i, "availFrom", Math.max(0, Math.min(+e.target.value - 1, p.availTo)))}
+                      style={{ width: 42, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "3px 6px", color: C.text, fontSize: 12, fontFamily: font, textAlign: "center" }} />
+                    <span style={{ color: C.textMuted, fontSize: 11 }}>to</span>
+                    <input type="number" min={1} max={totalSlots} value={p.availTo + 1}
+                      onChange={(e) => updatePlayer(i, "availTo", Math.max(p.availFrom, Math.min(+e.target.value - 1, totalSlots - 1)))}
+                      style={{ width: 42, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "3px 6px", color: C.text, fontSize: 12, fontFamily: font, textAlign: "center" }} />
+                  </div>
+                )}
+
+                {staggerMode !== "custom" && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: staggerMode === "none" ? "auto" : 0 }}>
+                    {p.leavesAt != null ? (
+                      <>
+                        <span style={{ fontSize: 10, color: C.textMuted }}>↓</span>
+                        <input type="number" min={1} max={totalSlots} value={p.leavesAt + 1}
+                          onChange={e => updatePlayer(i, "leavesAt", Math.max(0, Math.min(+e.target.value - 1, totalSlots - 1)))}
+                          style={{ width: 38, background: C.bg, border: `1px solid ${C.amber}`, borderRadius: 4, padding: "3px 6px", color: C.amber, fontSize: 12, fontFamily: font, textAlign: "center" }} />
+                        <button onClick={() => updatePlayer(i, "leavesAt", null)}
+                          style={{ background: "none", border: "none", color: C.textMuted, fontSize: 14, padding: 0, lineHeight: 1 }}>×</button>
+                      </>
+                    ) : (
+                      <button onClick={() => updatePlayer(i, "leavesAt", Math.max(0, totalSlots - 2))}
+                        style={{ background: "none", border: `1px dashed ${C.border}`, borderRadius: 4, color: C.textMuted, fontSize: 11, padding: "2px 6px", fontFamily: font, whiteSpace: "nowrap" }}>
+                        ↓ leaves
+                      </button>
+                    )}
+                  </div>
+                )}
+                <button onClick={() => removePlayer(i)}
+                  style={{ background: "none", border: "none", color: C.textMuted, fontSize: 16, padding: 0, marginLeft: 0 }}>×</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {players.length > 0 && players.length < 4 && (
+          <p style={{ color: C.amber, fontSize: 12, marginBottom: 20, textAlign: "center" }}>Need at least 4 players</p>
+        )}
+
+        {/* Action Buttons */}
+        {players.length >= 4 && (
+          <div className="action-buttons">
+            <button onClick={() => setShowImport(true)}
+              style={{ background: 'transparent', color: C.textDim, border: `1px dashed ${C.border}`, borderRadius: 8, padding: "14px 16px", fontSize: 13, fontFamily: font }}>
+              Import
+            </button>
+            <button className="generate-btn" onClick={generate} disabled={isGenerating}
+              style={{
+                flex: 1, background: `linear-gradient(135deg, ${C.accentDim}, ${C.pinkDim})`,
+                color: "#fff", border: "none", borderRadius: 8, padding: "14px",
+                fontSize: 14, fontWeight: 700, fontFamily: font, letterSpacing: "1px", textTransform: "uppercase",
+                opacity: isGenerating ? 0.6 : 1,
+              }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
+                <LucideIcon name="shuffle" size={15} />
+                {isGenerating ? `Slot ${genSlot} / ${totalSlots}…` : result ? "Re-roll" : `Generate (${totalSlots} slots)`}
+              </span>
+            </button>
+            {result && (
+              <button onClick={copySchedule} title="Copy full schedule (with sit list & game counts)"
+                style={{
+                  background: copied ? C.green : C.card, color: copied ? C.bg : C.text,
+                  border: `1px solid ${copied ? C.green : C.border}`,
+                  borderRadius: 8, padding: "14px 16px", fontSize: 14, fontWeight: 700,
+                  fontFamily: font, transition: "all 0.2s", minWidth: 52,
+                }}><LucideIcon name={copied ? "check" : "copy"} size={15} /></button>
+            )}
+            {result && (
+              <button onClick={copyGames} title="Copy games only (matchups, no sit list or stats)"
+                style={{
+                  background: copiedGames ? C.green : C.card, color: copiedGames ? C.bg : C.textDim,
+                  border: `1px solid ${copiedGames ? C.green : C.border}`,
+                  borderRadius: 8, padding: "14px 16px", fontSize: 12, fontWeight: 700,
+                  fontFamily: font, transition: "all 0.2s",
+                }}>{copiedGames ? <LucideIcon name="check" size={15} /> : "⚡ Copy"}</button>
+            )}
+            {result && (
+              <button onClick={saveAsImage}
+                style={{
+                  background: C.card, color: C.text, border: `1px solid ${C.border}`,
+                  borderRadius: 8, padding: "14px 16px", fontFamily: font, minWidth: 52,
+                }}><LucideIcon name="download" size={15} /></button>
+            )}
+            {result && (
+              <button onClick={() => { setSaveTag(''); setShowSavePlan(true); }} title="Save plan with tag"
+                style={{
+                  background: C.card, color: C.text, border: `1px solid ${C.border}`,
+                  borderRadius: 8, padding: "14px 16px", fontFamily: font, minWidth: 52,
+                }}><LucideIcon name="bookmark" size={15} /></button>
+            )}
+            {result && (
+              <button onClick={shareLink} title="Share schedule via link"
+                style={{
+                  background: C.card, color: C.text, border: `1px solid ${C.border}`,
+                  borderRadius: 8, padding: "14px 16px", fontFamily: font, minWidth: 52,
+                }}><LucideIcon name="link" size={15} /></button>
+            )}
+            {result && (
+              <button onClick={clearSchedule} title="Clear saved schedule"
+                style={{
+                  background: C.card, color: C.textMuted, border: `1px solid ${C.border}`,
+                  borderRadius: 8, padding: "14px 16px", fontFamily: font, minWidth: 52,
+                }}><LucideIcon name="trash" size={15} /></button>
+            )}
+          </div>
+        )}
+
+        {/* Saved plans list */}
+        {savedPlans.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <button onClick={() => setShowSavedList(s => !s)}
+              style={{ background: 'none', border: 'none', color: C.textDim, fontFamily: font, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0' }}>
+              <LucideIcon name={showSavedList ? "chevron-up" : "chevron-down"} size={13} />
+              {savedPlans.length} saved plan{savedPlans.length > 1 ? 's' : ''}
+            </button>
+            {showSavedList && (
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {savedPlans.map(plan => (
+                  <div key={plan.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px' }}>
+                    <LucideIcon name="bookmark" size={13} style={{ color: C.accent, flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{plan.tag}</span>
+                    <span style={{ fontSize: 11, color: C.textDim }}>
+                      {new Date(plan.savedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    </span>
+                    <button onClick={() => loadPlan(plan)}
+                      style={{ background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '5px 10px', fontSize: 12, fontWeight: 600, fontFamily: font, cursor: 'pointer' }}>
+                      Load
+                    </button>
+                    <button onClick={() => deletePlan(plan.id)}
+                      style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}>
+                      <LucideIcon name="x" size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Scores-applied hint */}
+        {hasAppliedScores && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, background: C.card, border: `1px solid ${C.amber}33`, borderRadius: 8, padding: '8px 14px' }}>
+            <span style={{ fontSize: 12, color: C.amber }}>⚡ Scores recorded — re-roll to use updated skill ratings in the next schedule</span>
+          </div>
+        )}
+
+        {/* Re-generate from slot */}
+        {result && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, marginBottom: 16, flexWrap: "wrap",
+            background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px",
+          }}>
+            <span style={{ fontSize: 12, color: C.textDim }}>Re-generate from slot</span>
+            <input type="number" min={1} max={totalSlots} value={fromSlot}
+              onChange={e => setFromSlot(Math.min(totalSlots, Math.max(1, +e.target.value)))}
+              style={{
+                width: 48, background: C.bg, border: `1px solid ${C.border}`,
+                borderRadius: 4, padding: "4px 6px", color: C.text, fontSize: 13, fontFamily: font, textAlign: "center",
+              }} />
+            <span style={{ fontSize: 12, color: C.textDim }}>with</span>
+            <div style={{ display: "flex", gap: 4 }}>
+              {[0, 1, 2, 3].map(n => (
+                <button key={n} onClick={() => setFromSlotCourts(n)}
+                  style={{
+                    padding: "4px 8px", fontSize: 12, fontWeight: 600, fontFamily: font,
+                    borderRadius: 4, border: `1px solid ${fromSlotCourts === n ? C.accent : C.border}`,
+                    background: fromSlotCourts === n ? C.accentDim : C.bg,
+                    color: fromSlotCourts === n ? "#fff" : C.textDim, cursor: "pointer",
+                  }}>{n === 0 ? "auto" : `${n}C`}</button>
+              ))}
+            </div>
+            <span style={{ fontSize: 12, color: C.textDim, flex: 1 }}>courts onwards</span>
+            <button onClick={regenerateRemaining}
+              style={{
+                background: C.accentDim, color: "#fff", border: "none",
+                borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, fontFamily: font,
+              }}>Apply</button>
+          </div>
+        )}
+
+        {saved && (
+          <p style={{ fontSize: 12, color: C.green, textAlign: "center", marginTop: -16, marginBottom: 16 }}>
+            Schedule saved — will persist on refresh
+          </p>
+        )}
+
+        {/* Results */}
+        {result && (
+          <div ref={scheduleRef} style={{ background: C.bg, padding: 16, borderRadius: 12 }}>
+            <div style={{ textAlign: "center", marginBottom: 16 }}>
+              <span style={{ fontSize: 18, fontWeight: 700 }}>🏸 Badminton Schedule</span>
+              <p style={{ fontSize: 12, color: C.textDim, margin: "4px 0 0" }}>
+                {totalSlots} slots × {gameMinutes} min · {numCourts} court{numCourts > 1 ? "s" : ""}{extraCourt.enabled ? " +1 extra" : ""} · {players.length} players
+              </p>
+            </div>
+
+            {/* Stats */}
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
+              <h3 style={{ fontSize: 13, color: C.textDim, textTransform: "uppercase", letterSpacing: "1px", margin: "0 0 12px" }}>Games per Player</h3>
+              <div className="stats-grid">
+                {players.map((p, i) => {
+                  const g = result.gamesPlayed[i];
+                  const pct = maxGames > 0 ? (g / maxGames) * 100 : 0;
+                  return (
+                    <div key={i} className="stat-item">
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontSize: 14, color: p.gender === "F" ? C.pink : C.accent }}>{p.name}</span>
+                        <span style={{ fontSize: 14, fontWeight: 700 }}>{g}</span>
+                      </div>
+                      <div style={{ height: 5, background: C.border, borderRadius: 2 }}>
+                        <div style={{ height: "100%", borderRadius: 2, width: `${pct}%`, background: p.gender === "F" ? C.pink : C.accent }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p style={{ fontSize: 13, color: C.textDim, margin: "12px 0 0", textAlign: "center" }}>
+                Spread: {minGames}–{maxGames} (diff: {maxGames - minGames})
+                {maxGames - minGames <= 1 && <span style={{ color: C.green, marginLeft: 8 }}>✓ balanced</span>}
+              </p>
+            </div>
+
+            {/* Schedule Grid */}
+            <div className="schedule-grid">
+              {result.schedule.map((s, idx) => (
+                <div key={idx} style={{ background: C.card, border: `1px solid ${editingSlot === s.slot ? C.amber : C.border}`, borderRadius: 10, padding: "14px 16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <span style={{ fontSize: 13, color: C.textDim, fontWeight: 600 }}>SLOT {s.slot}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 12, color: C.textMuted }}>{slotTime(s.slot)}</span>
+                      {editingSlot === s.slot ? (
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button onClick={applySlotEdit}
+                            style={{ background: C.accentDim, color: "#fff", border: "none", borderRadius: 6, padding: "8px 14px", fontSize: 13, fontWeight: 700, fontFamily: font, minHeight: 36 }}>
+                            Apply
+                          </button>
+                          <button onClick={() => { setEditingSlot(null); setEditLayout(null); }}
+                            style={{ background: C.card, color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px", fontSize: 13, fontFamily: font, minHeight: 36 }}>
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => startSlotEdit(s.slot)}
+                          title="Edit who plays in this slot"
+                          style={{ background: "none", border: "none", color: C.textMuted, fontSize: 18, padding: "6px 10px", lineHeight: 1, cursor: "pointer", minHeight: 36, minWidth: 36 }}>
+                          ✏️
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Edit mode: per-position dropdowns */}
+                  {editingSlot === s.slot && editLayout && (() => {
+                    const genderByName = new Map([
+                      ...s.courts.flatMap(c => [...c.teamA, ...c.teamB]),
+                      ...s.sitting,
+                    ].map(p => [p.name, p.gender]));
+                    const allNames = [...editLayout.courts.flat(), ...editLayout.sitting];
+                    const slotPicker = (pos, currentName) => {
+                      const g = genderByName.get(currentName);
+                      const color = g === "F" ? C.pink : C.accent;
+                      return (
+                        <select value={currentName}
+                          onChange={(e) => assignToPosition(pos, e.target.value)}
+                          style={{
+                            background: C.bg, color: color,
+                            border: `1.5px solid ${g === "F" ? C.pinkDim : C.accentDim}`,
+                            borderRadius: 8, padding: "8px 10px", fontSize: 14, fontWeight: 600,
+                            fontFamily: font, minHeight: 38, minWidth: 92,
+                          }}>
+                          {allNames.map(name => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                        </select>
+                      );
+                    };
+                    return (
+                      <div style={{ marginBottom: 12 }}>
+                        <p style={{ fontSize: 11, color: C.textDim, marginBottom: 8, fontWeight: 600 }}>
+                          Tap any name to swap with another player
+                        </p>
+                        {editLayout.courts.map((court, ci) => (
+                          <div key={ci} style={{
+                            background: COURT_BG[ci], borderLeft: `3px solid ${COURT_COLORS[ci]}`,
+                            borderRadius: 6, padding: "8px 10px", marginBottom: 6,
+                          }}>
+                            {editLayout.courts.length > 1 && (
+                              <div style={{ fontSize: 10, color: COURT_COLORS[ci], fontWeight: 700, marginBottom: 4, textTransform: "uppercase" }}>
+                                Court {ci + 1}
+                              </div>
+                            )}
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexWrap: "wrap" }}>
+                              <div style={{ display: "flex", gap: 4 }}>
+                                {slotPicker({ type: "court", ci, idx: 0 }, court[0])}
+                                {slotPicker({ type: "court", ci, idx: 1 }, court[1])}
+                              </div>
+                              <span style={{ color: C.textMuted, fontSize: 11, fontWeight: 700 }}>VS</span>
+                              <div style={{ display: "flex", gap: 4 }}>
+                                {slotPicker({ type: "court", ci, idx: 2 }, court[2])}
+                                {slotPicker({ type: "court", ci, idx: 3 }, court[3])}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {editLayout.sitting.length > 0 && (
+                          <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+                            <span style={{ fontSize: 11, color: C.textMuted }}>Sit:</span>
+                            {editLayout.sitting.map((name, si) => (
+                              <span key={si}>{slotPicker({ type: "sit", idx: si }, name)}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {editingSlot !== s.slot && s.courts.map((court, ci) => (
+                    <div key={ci} style={{
+                      background: COURT_BG[ci], borderLeft: `3px solid ${COURT_COLORS[ci]}`,
+                      borderRadius: 6, padding: "8px 10px", marginBottom: ci < s.courts.length - 1 ? 6 : 0,
+                    }}>
+                      {(s.courts.length > 1 || s.repeatedCourts?.includes(ci)) && (
+                        <div style={{ fontSize: 10, fontWeight: 700, marginBottom: 4, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
+                          {s.courts.length > 1 && <span style={{ color: COURT_COLORS[ci] }}>Court {court.court}</span>}
+                          {s.repeatedCourts?.includes(ci) && (
+                            <span style={{ color: C.amber }}>⚠ repeat group</span>
+                          )}
+                        </div>
+                      )}
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                        <div style={{ textAlign: "center" }}>
+                          {court.teamA.map((p, pi) => (
+                            <span key={pi} style={{ color: p.gender === "F" ? C.pink : C.accent, fontSize: 15, fontWeight: 600 }}>
+                              {p.name}{pi === 0 ? " · " : ""}
+                            </span>
+                          ))}
+                        </div>
+                        <span style={{ color: C.textMuted, fontSize: 11, fontWeight: 700 }}>VS</span>
+                        <div style={{ textAlign: "center" }}>
+                          {court.teamB.map((p, pi) => (
+                            <span key={pi} style={{ color: p.gender === "F" ? C.pink : C.accent, fontSize: 15, fontWeight: 600 }}>
+                              {p.name}{pi === 0 ? " · " : ""}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Score entry */}
+                      {(() => {
+                        const key = `s${s.slot}c${ci}`;
+                        const sc = scores[key] || { a: "", b: "" };
+                        const tA = court.teamA.map(p => p.name);
+                        const tB = court.teamB.map(p => p.name);
+                        const inputStyle = (active) => ({
+                          width: 38, background: C.bg,
+                          border: `1px solid ${active ? C.green : C.border}`,
+                          borderRadius: 4, padding: "4px 0", color: C.text,
+                          fontSize: 13, fontFamily: font, textAlign: "center", outline: "none",
+                        });
+                        return (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+                            <input type="number" min={0} max={30} value={sc.a}
+                              onChange={e => updateScore(s.slot, ci, e.target.value, sc.b, tA, tB)}
+                              placeholder="–" disabled={!isAdmin} title={!isAdmin ? 'Unlock admin to enter scores' : undefined}
+                              style={{ ...inputStyle(sc.applied), opacity: isAdmin ? 1 : 0.4 }} />
+                            <span style={{ color: C.textMuted, fontSize: 12, fontWeight: 600 }}>–</span>
+                            <input type="number" min={0} max={30} value={sc.b}
+                              onChange={e => updateScore(s.slot, ci, sc.a, e.target.value, tA, tB)}
+                              placeholder="–" disabled={!isAdmin} title={!isAdmin ? 'Unlock admin to enter scores' : undefined}
+                              style={{ ...inputStyle(sc.applied), opacity: isAdmin ? 1 : 0.4 }} />
+                            {sc.applied && (
+                              <span style={{ fontSize: 11, color: C.green, fontWeight: 600 }}>
+                                {parseInt(sc.a) > parseInt(sc.b) ? tA.join(" & ") : tB.join(" & ")} won
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  ))}
+
+                  {s.courts.length === 0 && (
+                    <div style={{ textAlign: "center", padding: 10, color: C.textMuted, fontSize: 12 }}>Not enough players</div>
+                  )}
+
+                  {editingSlot !== s.slot && s.sitting && s.sitting.length > 0 && (
+                    <div style={{ marginTop: 8, textAlign: "center" }}>
+                      <span style={{ fontSize: 12, color: C.textMuted }}>Sit: {s.sitting.map((p) => p.name).join(", ")}</span>
+                    </div>
+                  )}
+
+                  {/* Player tracker */}
+                  <div className="player-tracker" style={{ borderTop: `1px solid ${C.border}` }}>
+                    {s.playerState.filter((ps) => ps.available).map((ps, pi) => (
+                      <div key={pi} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                        <span style={{
+                          fontSize: 12, fontWeight: 700,
+                          color: ps.playing ? (ps.gender === "F" ? C.pink : C.accent) : C.textMuted,
+                        }}>{ps.name}</span>
+                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                          <span style={{
+                            fontSize: 11, fontWeight: 600,
+                            background: ps.playing ? "rgba(34,211,238,0.15)" : "rgba(100,116,139,0.15)",
+                            color: ps.playing ? C.green : C.textMuted,
+                            padding: "2px 6px", borderRadius: 4,
+                          }}>{ps.playing ? `ON ${ps.conPlayed}` : `OFF ${ps.conRested}`}</span>
+                          <span style={{
+                            fontSize: 11, fontWeight: 600, color: C.text,
+                            background: "rgba(226,232,240,0.1)", padding: "2px 6px", borderRadius: 4,
+                          }}>{ps.total}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default BadmintonPlanner;
