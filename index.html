@@ -126,7 +126,7 @@
       const partnerCount = initialState ? initialState.partnerCount.map(r => [...r]) : Array.from({ length: n }, () => new Array(n).fill(0));
       const opponentCount = initialState ? initialState.opponentCount.map(r => [...r]) : Array.from({ length: n }, () => new Array(n).fill(0));
       const courtGroupHistory = initialState?.courtGroupHistory ? new Set(initialState.courtGroupHistory) : new Set();
-      let womenDoublesCount = 0; // track across slots; target >= 2
+      let womenDoublesCount = initialState?.womenDoublesCount ?? 0;
 
       for (let slot = startFrom; slot < totalSlots; slot++) {
         const available = [];
@@ -151,8 +151,9 @@
               name: p.name, gender: p.gender, total: gamesPlayed[i],
               conPlayed: consecutivePlayed[i], conRested: consecutiveRested[i],
               playing: false, available: available.includes(i),
-            }))});
+            })), repeatedCourts: [] });
           for (const i of available) { consecutiveRested[i]++; consecutivePlayed[i] = 0; }
+          yield { schedule: [...schedule], gamesPlayed: [...gamesPlayed] };
           continue;
         }
 
@@ -461,13 +462,17 @@
         });
       }
       const courtGroupHistory = new Set();
+      let womenDoublesCount = 0;
       keptSlots.forEach(s => {
         s.courts.forEach(court => {
           const g = [...court.teamA, ...court.teamB].map(p => players.findIndex(pl => pl.name === p.name));
           if (g.every(x => x >= 0)) courtGroupHistory.add(groupKey(g));
+          const aWD = court.teamA[0].gender === "F" && court.teamA[1].gender === "F";
+          const bWD = court.teamB[0].gender === "F" && court.teamB[1].gender === "F";
+          if (aWD || bWD) womenDoublesCount++;
         });
       });
-      return { keptSlots, gamesPlayed, consecutivePlayed, consecutiveRested, partnerCount, opponentCount, courtGroupHistory };
+      return { keptSlots, gamesPlayed, consecutivePlayed, consecutiveRested, partnerCount, opponentCount, courtGroupHistory, womenDoublesCount };
     }
 
     // ─── Colors ──────────────────────────────────────────────────────────────────
