@@ -1,0 +1,11 @@
+name = "badminton-share-links"
+main = "src/index.ts"
+compatibility_date = "2026-05-06"
+
+[[kv_namespaces]]
+binding = "SHARES"
+id = "REPLACE_WITH_PROD_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"
+
+[vars]
+ALLOWED_ORIGIN = "https://eamonsuen02784.github.io"

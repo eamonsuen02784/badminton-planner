@@ -39,6 +39,7 @@ The algorithm balances several goals, in this order:
 - **Staggered arrivals** — All here / Early-Late groups / Per-player custom slot ranges
 - **Mid-session changes** — re-generate from any slot to handle late arrivals or player substitutions
 - **Persisted schedule** — auto-saves to browser storage; survives page refresh
+- **Cloud share links** — optional Cloudflare Worker backend can store schedules server-side for short links
 - **Re-roll** — regenerate in one click until you're happy
 - **Copy to clipboard** — formatted text for group chats
 - **Save as image** — exports schedule as PNG via html2canvas
@@ -119,3 +120,24 @@ Lowest score wins. Skill ratings are derived from each player's win rate from pr
 - Single HTML file (`index.html`) — React 18 + Babel loaded from CDN, no build step
 - html2canvas for image export (loaded on demand)
 - Hosted on GitHub Pages
+
+## Cloud Schedule Sharing
+
+The app can now use an optional Cloudflare Worker for server-side schedule persistence when sharing.
+
+- Frontend config: set `window.SHARE_API_BASE` in [index-vite.html](/home/esuen/projects/misc/badminton/index-vite.html:1)
+- Worker scaffold: [workers/share-links/src/index.ts](/home/esuen/projects/misc/badminton/workers/share-links/src/index.ts:1)
+- Wrangler config: [workers/share-links/wrangler.toml](/home/esuen/projects/misc/badminton/workers/share-links/wrangler.toml:1)
+
+How it behaves:
+
+- If `window.SHARE_API_BASE` is configured, the Share button uploads the schedule to the worker and copies a short `?share=<id>` link.
+- If it is not configured or the upload fails, the app falls back to the existing hash-based share link.
+- Existing hash share links still load.
+
+Suggested deploy shape:
+
+1. Create a Cloudflare KV namespace for `SHARES`.
+2. Fill in the namespace IDs in `wrangler.toml`.
+3. Deploy the worker on a domain like `https://badminton-share.your-subdomain.workers.dev`.
+4. Set `window.SHARE_API_BASE` to that worker origin.

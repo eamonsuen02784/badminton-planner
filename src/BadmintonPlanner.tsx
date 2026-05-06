@@ -15,6 +15,10 @@ import {
   ShareLoadModal,
 } from './components/PlannerModals';
 
+function normalizeApiBase(base) {
+  return base ? base.replace(/\/+$/, '') : null;
+}
+
 function isValidBadmintonScore(a, b) {
   if (a === b || a < 0 || b < 0) return false;
   const hi = Math.max(a, b);
@@ -128,6 +132,26 @@ function BadmintonPlanner() {
   }, [result]);
 
   useEffect(() => {
+    const apiBase = normalizeApiBase(window.SHARE_API_BASE);
+    const params = new URLSearchParams(window.location.search);
+    const shareId = params.get('share');
+    if (shareId && apiBase) {
+      fetch(`${apiBase}/shares/${encodeURIComponent(shareId)}`)
+        .then(async response => {
+          if (!response.ok) throw new Error(`Share load failed: ${response.status}`);
+          return response.json();
+        })
+        .then(payload => {
+          const data = payload?.data;
+          if (data?.v === 1 && data.p && data.slots) {
+            patchState({ pendingShare: data, showShareLoad: true });
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+        })
+        .catch(() => {});
+      return;
+    }
+
     const hash = window.location.hash;
     if (!hash.startsWith('#share=')) return;
     try {
@@ -483,13 +507,18 @@ function BadmintonPlanner() {
 
   const deletePlan = useCallback((id) => patchState({ savedPlans: savedPlans.filter(plan => plan.id !== id) }), [savedPlans]);
 
-  const shareLink = useCallback(() => {
+  const shareLink = useCallback(async () => {
     if (!result) return;
     const pwith = getPlayersWithAvailability();
     const data = {
       v: 1,
       p: pwith.map(p => [p.name, p.gender]),
       cfg: { g: gameMinutes, c: numCourts },
+      scores: Object.fromEntries(
+        Object.entries(scores)
+          .filter(([, value]) => value?.applied)
+          .map(([key, value]) => [key, { a: value.a, b: value.b }]),
+      ),
       slots: result.schedule.map(s => ({
         s: s.slot,
         c: s.courts.map(court => [
@@ -499,12 +528,34 @@ function BadmintonPlanner() {
         sit: (s.sitting || []).map(p => pwith.findIndex(pl => pl.name === p.name)),
       })),
     };
-    const url = `${window.location.origin}${window.location.pathname}#share=${btoa(JSON.stringify(data))}`;
-    copyText(url, () => {
-      patchState({ sharedUrl: url, copiedShareUrl: true, showShareModal: true });
+    const apiBase = normalizeApiBase(window.SHARE_API_BASE);
+
+    if (apiBase) {
+      try {
+        const response = await fetch(`${apiBase}/shares`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data }),
+        });
+        if (!response.ok) throw new Error(`Share save failed: ${response.status}`);
+        const payload = await response.json();
+        if (payload?.id) {
+          const url = `${window.location.origin}${window.location.pathname}?share=${encodeURIComponent(payload.id)}`;
+          copyText(url, () => {
+            patchState({ sharedUrl: url, copiedShareUrl: true, showShareModal: true });
+            setTimeout(() => patchState({ copiedShareUrl: false }), 2000);
+          });
+          return;
+        }
+      } catch {}
+    }
+
+    const fallbackUrl = `${window.location.origin}${window.location.pathname}#share=${btoa(JSON.stringify(data))}`;
+    copyText(fallbackUrl, () => {
+      patchState({ sharedUrl: fallbackUrl, copiedShareUrl: true, showShareModal: true });
       setTimeout(() => patchState({ copiedShareUrl: false }), 2000);
     });
-  }, [gameMinutes, getPlayersWithAvailability, numCourts, result]);
+  }, [gameMinutes, getPlayersWithAvailability, numCourts, result, scores]);
 
   const copyShareUrl = useCallback(() => {
     copyText(sharedUrl, () => {
@@ -515,7 +566,7 @@ function BadmintonPlanner() {
 
   const loadSharedSchedule = useCallback(() => {
     if (!pendingShare) return;
-    const { p: sharedPlayers, cfg, slots } = pendingShare;
+    const { p: sharedPlayers, cfg, slots, scores: sharedScores } = pendingShare;
     const n = sharedPlayers.length;
     const gp = new Array(n).fill(0);
     const cp = new Array(n).fill(0);
@@ -552,12 +603,28 @@ function BadmintonPlanner() {
         repeatedCourts: [],
       };
     });
+    const restoredScores = {};
+    newSchedule.forEach(slot => {
+      slot.courts.forEach((court, ci) => {
+        const key = `s${slot.slot}c${ci}`;
+        const sharedScore = sharedScores?.[key];
+        if (!sharedScore) return;
+        restoredScores[key] = {
+          a: sharedScore.a,
+          b: sharedScore.b,
+          applied: true,
+          teamA: court.teamA.map(player => player.name),
+          teamB: court.teamB.map(player => player.name),
+        };
+      });
+    });
+
     patchState({
       players: sharedPlayers.map(([name, gender]) => ({ name, gender, skill: 2, availFrom: 0, availTo: slots.length - 1, group: 'full', leavesAt: null })),
       gameMinutes: cfg?.g || gameMinutes,
       numCourts: cfg?.c || numCourts,
       result: { schedule: newSchedule, gamesPlayed: [...gp] },
-      scores: {},
+      scores: restoredScores,
       showShareLoad: false,
       pendingShare: null,
     });

@@ -54,6 +54,7 @@ export interface SharePayload {
   v: 1;
   p: SharedPlayer[];
   cfg?: { g?: number; c?: number };
+  scores?: Record<string, { a: string; b: string }>;
   slots: Array<{
     s: number;
     c: number[][][];
@@ -139,6 +140,7 @@ declare global {
       load: () => Promise<WinLossMap>;
       save: (data: WinLossMap) => Promise<void>;
     };
+    SHARE_API_BASE?: string | null;
     html2canvas?: (node: HTMLElement, options?: unknown) => Promise<HTMLCanvasElement>;
   }
 }

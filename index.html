@@ -32,6 +32,7 @@
     // Leave null to allow score entry by anyone (fine for local/trusted use).
     window.ADMIN_PIN = "1234";
     // window.ADMIN_PIN = "1234";
+    window.SHARE_API_BASE = null;
 
     window.DB = (() => {
       if (!window.FIREBASE_CONFIG || typeof firebase === 'undefined') return null;
