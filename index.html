@@ -494,6 +494,7 @@
       "chevron-up": ["M18 15l-6-6-6 6"],
       "chevron-down":["M6 9l6 6 6-6"],
       x:            ["M18 6 6 18", "M6 6l12 12"],
+      link:         ["M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71", "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"],
     };
 
     const LucideIcon = ({ name, size = 16 }) => (
@@ -541,6 +542,11 @@
       const [showSavedList, setShowSavedList] = useState(false);
       const [editingSlot, setEditingSlot] = useState(null); // slot number (1-based) being edited
       const [editLayout, setEditLayout] = useState(null); // { courts: [[name,name,name,name], ...], sitting: [name, ...] }
+      const [pendingShare, setPendingShare] = useState(null);
+      const [showShareLoad, setShowShareLoad] = useState(false);
+      const [showShareModal, setShowShareModal] = useState(false);
+      const [sharedUrl, setSharedUrl] = useState('');
+      const [copiedShareUrl, setCopiedShareUrl] = useState(false);
       const scheduleRef = useRef(null);
 
       const totalSlots = Math.floor(totalMinutes / gameMinutes);
@@ -611,6 +617,89 @@
       const deletePlan = useCallback((id) => {
         setSavedPlans(prev => prev.filter(p => p.id !== id));
       }, []);
+
+      // Detect share hash on mount
+      useEffect(() => {
+        const hash = window.location.hash;
+        if (!hash.startsWith('#share=')) return;
+        try {
+          const data = JSON.parse(atob(hash.slice(7)));
+          if (data.v === 1 && data.p && data.slots) {
+            setPendingShare(data);
+            setShowShareLoad(true);
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+        } catch (e) {}
+      }, []);
+
+      const shareLink = useCallback(() => {
+        if (!result) return;
+        const pwith = getPlayersWithAvailability();
+        const data = {
+          v: 1,
+          p: pwith.map(p => [p.name, p.gender]),
+          cfg: { g: gameMinutes, c: numCourts },
+          slots: result.schedule.map(s => ({
+            s: s.slot,
+            c: s.courts.map(court => [
+              court.teamA.map(p => pwith.findIndex(pl => pl.name === p.name)),
+              court.teamB.map(p => pwith.findIndex(pl => pl.name === p.name)),
+            ]),
+            sit: (s.sitting || []).map(p => pwith.findIndex(pl => pl.name === p.name)),
+          })),
+        };
+        const encoded = btoa(JSON.stringify(data));
+        const url = `${window.location.origin}${window.location.pathname}#share=${encoded}`;
+        const ta = document.createElement("textarea");
+        ta.value = url; ta.style.position = "fixed"; ta.style.left = "-9999px";
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand("copy"); } catch (e) {}
+        document.body.removeChild(ta);
+        setSharedUrl(url);
+        setCopiedShareUrl(true);
+        setShowShareModal(true);
+        setTimeout(() => setCopiedShareUrl(false), 2000);
+      }, [result, getPlayersWithAvailability, gameMinutes, numCourts]);
+
+      const loadSharedSchedule = useCallback(() => {
+        if (!pendingShare) return;
+        const { p: sp, cfg, slots } = pendingShare;
+        const n = sp.length;
+        const gp = new Array(n).fill(0);
+        const cp = new Array(n).fill(0);
+        const cr = new Array(n).fill(0);
+        const newSchedule = slots.map(slot => {
+          const playing = new Set(slot.c.flat(2));
+          for (let i = 0; i < n; i++) {
+            if (playing.has(i)) { gp[i]++; cp[i]++; cr[i] = 0; }
+            else { cr[i]++; cp[i] = 0; }
+          }
+          return {
+            slot: slot.s,
+            courts: slot.c.map((court, ci) => ({
+              court: ci + 1,
+              teamA: court[0].map(i => ({ name: sp[i][0], gender: sp[i][1] })),
+              teamB: court[1].map(i => ({ name: sp[i][0], gender: sp[i][1] })),
+            })),
+            sitting: slot.sit.map(i => ({ name: sp[i][0], gender: sp[i][1] })),
+            playerState: sp.map(([name, gender], i) => ({
+              name, gender, total: gp[i], conPlayed: cp[i], conRested: cr[i],
+              playing: playing.has(i), available: true,
+            })),
+            repeatedCourts: [],
+          };
+        });
+        const newPlayers = sp.map(([name, gender]) => ({
+          name, gender, skill: 2, availFrom: 0, availTo: slots.length - 1, group: "full", leavesAt: null,
+        }));
+        setPlayers(newPlayers);
+        if (cfg?.g) setGameMinutes(cfg.g);
+        if (cfg?.c) setNumCourts(cfg.c);
+        setResult({ schedule: newSchedule, gamesPlayed: [...gp] });
+        setScores({});
+        setShowShareLoad(false);
+        setPendingShare(null);
+      }, [pendingShare]);
 
       const getCourtsPerSlot = useCallback(() => {
         return Array.from({ length: totalSlots }, (_, slot) => {
@@ -1019,6 +1108,55 @@
               </div>
             )}
 
+            {/* Share link modal */}
+            {showShareModal && (
+              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, width: '100%', maxWidth: 480 }}>
+                  <p style={{ fontWeight: 700, marginBottom: 4 }}>Share link</p>
+                  <p style={{ fontSize: 12, color: C.textDim, marginBottom: 12 }}>
+                    {copiedShareUrl ? '✓ Copied!' : 'Link copied to clipboard.'} Open it on any device to load this schedule.
+                  </p>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input readOnly value={sharedUrl}
+                      onFocus={e => e.target.select()}
+                      style={{ flex: 1, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', color: C.textDim, fontSize: 11, fontFamily: 'monospace', minWidth: 0 }} />
+                    <button onClick={() => {
+                      const ta = document.createElement("textarea"); ta.value = sharedUrl;
+                      ta.style.position = "fixed"; ta.style.left = "-9999px";
+                      document.body.appendChild(ta); ta.select();
+                      try { document.execCommand("copy"); setCopiedShareUrl(true); setTimeout(() => setCopiedShareUrl(false), 2000); } catch(e) {}
+                      document.body.removeChild(ta);
+                    }} style={{ background: copiedShareUrl ? C.green : C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 12px', fontWeight: 700, fontFamily: font, whiteSpace: 'nowrap' }}>
+                      {copiedShareUrl ? '✓ Copied' : 'Copy'}
+                    </button>
+                  </div>
+                  <button onClick={() => setShowShareModal(false)}
+                    style={{ marginTop: 12, width: '100%', background: 'transparent', color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px', fontFamily: font }}>
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Load shared schedule modal */}
+            {showShareLoad && pendingShare && (
+              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, width: '100%', maxWidth: 400 }}>
+                  <p style={{ fontWeight: 700, marginBottom: 4 }}>Load shared schedule?</p>
+                  <p style={{ fontSize: 12, color: C.textDim, marginBottom: 16 }}>
+                    {pendingShare.p.length} players · {pendingShare.slots.length} slots
+                    <br />This will replace your current schedule and player list.
+                  </p>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={loadSharedSchedule}
+                      style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '10px', fontWeight: 700, fontFamily: font }}>Load</button>
+                    <button onClick={() => { setShowShareLoad(false); setPendingShare(null); }}
+                      style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px 16px', fontFamily: font }}>Dismiss</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Import modal */}
             {showImport && (
               <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
@@ -1350,6 +1488,13 @@
                       background: C.card, color: C.text, border: `1px solid ${C.border}`,
                       borderRadius: 8, padding: "14px 16px", fontFamily: font, minWidth: 52,
                     }}><LucideIcon name="bookmark" size={15} /></button>
+                )}
+                {result && (
+                  <button onClick={shareLink} title="Share schedule via link"
+                    style={{
+                      background: C.card, color: C.text, border: `1px solid ${C.border}`,
+                      borderRadius: 8, padding: "14px 16px", fontFamily: font, minWidth: 52,
+                    }}><LucideIcon name="link" size={15} /></button>
                 )}
                 {result && (
                   <button onClick={clearSchedule} title="Clear saved schedule"
