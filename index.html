@@ -30,7 +30,7 @@
 
     // Set a PIN to require authentication before scores can be entered or synced.
     // Leave null to allow score entry by anyone (fine for local/trusted use).
-    window.ADMIN_PIN = null;
+    window.ADMIN_PIN = "1234";
     // window.ADMIN_PIN = "1234";
 
     window.DB = (() => {
@@ -142,9 +142,9 @@
           else canPlay.push(i);
         }
 
-        // Base court count on eligible players (excluding mustRest) so courts stay filled
-        const eligibleCount = available.length - mustRest.length;
-        const courtsThisSlot = Math.min(courtsPerSlot[slot], Math.floor(eligibleCount / 4));
+        // Use all available players for court count — mustRest players can play
+        // a 3rd consecutive game rather than leaving a court empty.
+        const courtsThisSlot = Math.min(courtsPerSlot[slot], Math.floor(available.length / 4));
         if (courtsThisSlot === 0) {
           schedule.push({ slot: slot + 1, courts: [], sitting: available.map((i) => players[i]),
             playerState: players.map((p, i) => ({
@@ -224,6 +224,13 @@
           for (const p of mustPlay) { if (selected.length < playersNeeded) selected.push(p); }
           remaining = pool.filter((p) => !selected.includes(p) && !mustRest.includes(p));
           for (const p of remaining) { if (selected.length >= playersNeeded) break; if (!selected.includes(p)) selected.push(p); }
+          // Draft mustRest players if courts would otherwise be under-filled
+          if (selected.length < playersNeeded) {
+            for (const p of shuffle(mustRest.filter(i => !selected.includes(i)))) {
+              if (selected.length >= playersNeeded) break;
+              selected.push(p);
+            }
+          }
         }
 
         const actualCourts = Math.min(courtsThisSlot, Math.floor(selected.length / 4));
@@ -863,8 +870,8 @@
         setCopied(false);
       }, [editingSlot, editLayout, result, players, totalSlots, getPlayersWithAvailability, computeSkill, getCourtsPerSlot]);
 
-      const copySchedule = useCallback(() => {
-        if (!result) return;
+      const buildCopyText = useCallback((mode) => {
+        if (!result) return "";
         const hasMultiCourts = result.schedule.some(s => s.courts.length > 1);
         const courtDesc = extraCourt.enabled
           ? ` · ${numCourts} court${numCourts > 1 ? "s" : ""} +1 extra (${extraCourt.startMin}–${extraCourt.startMin + extraCourt.durationMin}m)`
@@ -879,17 +886,27 @@
             const scoreStr = sc?.applied ? `  [${sc.a}–${sc.b}]` : "";
             lines.push(`  ${hasMultiCourts ? `Court ${c.court}: ` : ""}${tA}  vs  ${tB}${scoreStr}`);
           });
-          if (s.sitting && s.sitting.length > 0) lines.push(`  Sit: ${s.sitting.map((p) => p.name).join(", ")}`);
+          if (mode === "full" && s.sitting && s.sitting.length > 0)
+            lines.push(`  Sit: ${s.sitting.map((p) => p.name).join(", ")}`);
         });
-        lines.push(`\nGames per player:`);
-        players.forEach((p, i) => lines.push(`  ${p.name}: ${result.gamesPlayed[i]}`));
-        const text = lines.join("\n");
+        if (mode === "full") {
+          lines.push(`\nGames per player:`);
+          players.forEach((p, i) => lines.push(`  ${p.name}: ${result.gamesPlayed[i]}`));
+        }
+        return lines.join("\n");
+      }, [result, players, gameMinutes, totalSlots, numCourts, extraCourt, sessionStart, scores]);
+
+      const doCopy = useCallback((text, setter) => {
         const ta = document.createElement("textarea");
         ta.value = text; ta.style.position = "fixed"; ta.style.left = "-9999px";
         document.body.appendChild(ta); ta.select();
-        try { document.execCommand("copy"); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch (e) {}
+        try { document.execCommand("copy"); setter(true); setTimeout(() => setter(false), 2000); } catch (e) {}
         document.body.removeChild(ta);
-      }, [result, players, gameMinutes, totalSlots, numCourts, extraCourt, sessionStart, scores]);
+      }, []);
+
+      const [copiedGames, setCopiedGames] = useState(false);
+      const copySchedule = useCallback(() => doCopy(buildCopyText("full"), setCopied), [doCopy, buildCopyText]);
+      const copyGames    = useCallback(() => doCopy(buildCopyText("games"), setCopiedGames), [doCopy, buildCopyText]);
 
       const saveAsImage = useCallback(async () => {
         if (!scheduleRef.current) return;
@@ -1303,13 +1320,22 @@
                   </span>
                 </button>
                 {result && (
-                  <button onClick={copySchedule}
+                  <button onClick={copySchedule} title="Copy full schedule (with sit list & game counts)"
                     style={{
                       background: copied ? C.green : C.card, color: copied ? C.bg : C.text,
                       border: `1px solid ${copied ? C.green : C.border}`,
                       borderRadius: 8, padding: "14px 16px", fontSize: 14, fontWeight: 700,
                       fontFamily: font, transition: "all 0.2s", minWidth: 52,
                     }}><LucideIcon name={copied ? "check" : "copy"} size={15} /></button>
+                )}
+                {result && (
+                  <button onClick={copyGames} title="Copy games only (matchups, no sit list or stats)"
+                    style={{
+                      background: copiedGames ? C.green : C.card, color: copiedGames ? C.bg : C.textDim,
+                      border: `1px solid ${copiedGames ? C.green : C.border}`,
+                      borderRadius: 8, padding: "14px 16px", fontSize: 12, fontWeight: 700,
+                      fontFamily: font, transition: "all 0.2s",
+                    }}>{copiedGames ? <LucideIcon name="check" size={15} /> : "⚡ Copy"}</button>
                 )}
                 {result && (
                   <button onClick={saveAsImage}
