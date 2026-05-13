@@ -26,6 +26,10 @@ export function groupKey(idxs: number[]): string {
 
 // ─── Algorithm ───────────────────────────────────────────────────────────────
 
+export interface ScheduleOptions {
+  preferMixedTeams?: boolean; // pack 2F+2M on one court rather than spreading 1F per court
+}
+
 export function* generateScheduleGen(
   players: Player[],
   totalSlots: number,
@@ -33,6 +37,7 @@ export function* generateScheduleGen(
   startFrom = 0,
   initialState: ScheduleState | null = null,
   forcedFirstSlot: ForcedFirstSlot | null = null,
+  options: ScheduleOptions = {},
   rng: () => number = Math.random,
 ): Generator<GeneratorYield> {
   const n = players.length;
@@ -256,10 +261,16 @@ export function* generateScheduleGen(
     } else {
       for (let c = 0; c < actualCourts; c++) {
         const courtsLeft = actualCourts - c;
-        if (remF.length >= 2 && remM.length >= 2 && Math.ceil(remF.length / courtsLeft) >= 2) {
+        const fPerCourt = courtsLeft > 0 ? Math.ceil(remF.length / courtsLeft) : 0;
+        if (fPerCourt >= 2 && remF.length >= 2 && remM.length >= 2) {
+          // 2F+2M: enables MF vs MF
           courtGroups.push([...remF.splice(0, 2), ...remM.splice(0, 2)]);
         } else if (remF.length >= 4) {
+          // All-female court
           courtGroups.push(remF.splice(0, 4));
+        } else if (fPerCourt >= 1 && remM.length >= 3 && !options.preferMixedTeams) {
+          // 1F+3M: spread females evenly across courts instead of packing into court 0
+          courtGroups.push([remF.splice(0, 1)[0]!, ...remM.splice(0, 3)]);
         } else {
           courtGroups.push(takeGroup());
         }
@@ -429,10 +440,11 @@ export function generateSchedule(
   startFrom = 0,
   initialState: ScheduleState | null = null,
   forcedFirstSlot: ForcedFirstSlot | null = null,
+  options: ScheduleOptions = {},
   rng: () => number = Math.random,
 ): GeneratorYield | null {
   let result: GeneratorYield | null = null;
-  for (result of generateScheduleGen(players, totalSlots, courtsPerSlot, startFrom, initialState, forcedFirstSlot, rng));
+  for (result of generateScheduleGen(players, totalSlots, courtsPerSlot, startFrom, initialState, forcedFirstSlot, options, rng));
   return result;
 }
 

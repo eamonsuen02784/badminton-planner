@@ -89,6 +89,7 @@ function BadmintonPlanner() {
     shareIsUpdate,
     shareId,
     shareToken,
+    preferMixedTeams,
   } = state;
 
   const totalSlots = Math.floor(totalMinutes / gameMinutes);
@@ -318,7 +319,7 @@ function BadmintonPlanner() {
     if (players.length < 4 || isGenerating) return;
     patchState({ isGenerating: true, result: null, scores: {}, copied: false, genSlot: 0 });
     const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
-    const gen = generateScheduleGen(playersWithSkill, totalSlots, getCourtsPerSlot());
+    const gen = generateScheduleGen(playersWithSkill, totalSlots, getCourtsPerSlot(), 0, null, null, { preferMixedTeams });
     let lastValue = null;
     function step() {
       const { value, done } = gen.next();
@@ -341,7 +342,7 @@ function BadmintonPlanner() {
     if (fromSlotCourts > 0) {
       for (let i = fromSlot - 1; i < totalSlots; i++) courtsArr[i] = fromSlotCourts;
     }
-    const newResult = generateSchedule(playersWithSkill, totalSlots, courtsArr, fromSlot - 1, stateSnapshot);
+    const newResult = generateSchedule(playersWithSkill, totalSlots, courtsArr, fromSlot - 1, stateSnapshot, null, { preferMixedTeams });
     if (!newResult) return;
     const nextScores = {};
     for (const key in scores) {
@@ -400,7 +401,7 @@ function BadmintonPlanner() {
     const nameToIdx = new Map(playersWithSkill.map((p, i) => [p.name, i]));
     const courtsForced = editLayout.courts.map(court => court.map(name => nameToIdx.get(name)).filter(i => i !== undefined));
     if (courtsForced.some(c => c.length !== 4)) return;
-    const newResult = generateSchedule(playersWithSkill, totalSlots, getCourtsPerSlot(), slotIdx, stateSnapshot, { courts: courtsForced });
+    const newResult = generateSchedule(playersWithSkill, totalSlots, getCourtsPerSlot(), slotIdx, stateSnapshot, { courts: courtsForced }, { preferMixedTeams });
     if (!newResult) return;
     const nextScores = {};
     for (const key in scores) {
@@ -728,6 +729,16 @@ function BadmintonPlanner() {
                   {label}
                 </button>
               ))}
+            </div>
+          </div>
+          <div style={{ flex: '0 0 auto' }}>
+            <label style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Mixed teams</label>
+            <div style={{ marginTop: 4 }}>
+              <button onClick={() => patchState({ preferMixedTeams: !preferMixedTeams, result: null })}
+                title={preferMixedTeams ? 'Each game has 1F+1M per side (2F per court)' : 'Females spread evenly across courts (1F per court when outnumbered)'}
+                style={{ background: preferMixedTeams ? C.pinkDim : C.card, color: preferMixedTeams ? '#fff' : C.textDim, border: `1px solid ${preferMixedTeams ? C.pinkDim : C.border}`, borderRadius: 6, padding: '8px 14px', fontSize: 13, fontWeight: 600, fontFamily: FONT }}>
+                {preferMixedTeams ? '1F+1M / side' : 'Spread F'}
+              </button>
             </div>
           </div>
         </div>

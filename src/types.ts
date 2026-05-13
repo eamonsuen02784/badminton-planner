@@ -102,6 +102,7 @@ export interface PlannerState {
   shareIsUpdate: boolean;
   shareId: string | null;
   shareToken: string | null;
+  preferMixedTeams: boolean;
 }
 
 export interface PlannerPersistedState {
@@ -118,6 +119,7 @@ export interface PlannerPersistedState {
   savedPlans: SavedPlan[];
   shareId: string | null;
   shareToken: string | null;
+  preferMixedTeams: boolean;
 }
 
 export interface ScheduleGridProps {

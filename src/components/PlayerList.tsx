@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { useState } from 'react';
 import { C, DEFAULT_PLAYERS, FONT } from '../constants';
 
 function SkillDot({ name, winLoss }) {
@@ -37,6 +38,7 @@ export default function PlayerList({
   updatePlayer,
   removePlayer,
 }) {
+  const [editingNameIdx, setEditingNameIdx] = useState(null);
   return (
     <>
       {players.length === 0 && (
@@ -121,7 +123,16 @@ export default function PlayerList({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 20 }}>
           {players.map((p, i) => (
             <div key={`${p.name}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px' }}>
-              <span style={{ color: p.gender === 'F' ? C.pink : C.accent, fontWeight: 700, fontSize: 14, minWidth: 70 }}>{p.name}</span>
+              {editingNameIdx === i ? (
+                <input autoFocus value={p.name}
+                  onChange={e => updatePlayer(i, 'name', e.target.value)}
+                  onBlur={() => setEditingNameIdx(null)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditingNameIdx(null); }}
+                  style={{ color: p.gender === 'F' ? C.pink : C.accent, fontWeight: 700, fontSize: 14, width: 90, background: C.bg, border: `1px solid ${p.gender === 'F' ? C.pinkDim : C.accentDim}`, borderRadius: 4, padding: '2px 6px', fontFamily: FONT, outline: 'none' }} />
+              ) : (
+                <span onClick={() => setEditingNameIdx(i)} title="Click to edit name"
+                  style={{ color: p.gender === 'F' ? C.pink : C.accent, fontWeight: 700, fontSize: 14, minWidth: 70, cursor: 'text' }}>{p.name}</span>
+              )}
               <span style={{ fontSize: 11, color: C.textDim }}>{p.gender === 'F' ? '♀' : '♂'}</span>
               {winLoss[p.name] && winLoss[p.name].wins + winLoss[p.name].losses > 0 && (
                 <span style={{ fontSize: 11, color: C.textMuted }}>

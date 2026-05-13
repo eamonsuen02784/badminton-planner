@@ -39,7 +39,7 @@ describe('Equal games', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const players = makePlayers(8, 0, 12);
       const rng = seededRng(seed);
-      const result = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, rng);
+      const result = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, {}, rng);
       expect(result).not.toBeNull();
       const gp = result!.gamesPlayed;
       const spread = Math.max(...gp) - Math.min(...gp);
@@ -56,7 +56,7 @@ describe('Equal games', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const players = makePlayers(10, 0, 12);
       const rng = seededRng(seed);
-      const result = generateSchedule(players, 12, courtsPerSlot(2, 12), 0, null, null, rng);
+      const result = generateSchedule(players, 12, courtsPerSlot(2, 12), 0, null, null, {}, rng);
       expect(result).not.toBeNull();
       const gp = result!.gamesPlayed;
       const spread = Math.max(...gp) - Math.min(...gp);
@@ -70,7 +70,7 @@ describe('Equal games', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const players = makePlayers(12, 0, 12);
       const rng = seededRng(seed);
-      const result = generateSchedule(players, 12, courtsPerSlot(2, 12), 0, null, null, rng);
+      const result = generateSchedule(players, 12, courtsPerSlot(2, 12), 0, null, null, {}, rng);
       expect(result).not.toBeNull();
       const gp = result!.gamesPlayed;
       const spread = Math.max(...gp) - Math.min(...gp);
@@ -86,7 +86,7 @@ describe('Availability windows respected', () => {
       // Player 0 only available for slots 0-4 (slots 1-5 in 1-based)
       players[0]!.availTo = 4;
       const rng = seededRng(seed);
-      const result = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, rng);
+      const result = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, {}, rng);
       expect(result).not.toBeNull();
       const schedule = result!.schedule;
       for (const slotResult of schedule) {
@@ -109,7 +109,7 @@ describe('Availability windows respected', () => {
       // Player 0 only available from slot 4 onwards (slot 5 in 1-based)
       players[0]!.availFrom = 4;
       const rng = seededRng(seed);
-      const result = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, rng);
+      const result = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, {}, rng);
       expect(result).not.toBeNull();
       const schedule = result!.schedule;
       for (const slotResult of schedule) {
@@ -131,7 +131,7 @@ describe('Courts always fully filled', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const players = makePlayers(12, 0, 12);
       const rng = seededRng(seed);
-      const result = generateSchedule(players, 12, courtsPerSlot(2, 12), 0, null, null, rng);
+      const result = generateSchedule(players, 12, courtsPerSlot(2, 12), 0, null, null, {}, rng);
       expect(result).not.toBeNull();
       for (const slotResult of result!.schedule) {
         expect(slotResult.courts.length, `Slot ${slotResult.slot} should have 2 courts (seed ${seed})`).toBe(2);
@@ -145,7 +145,7 @@ describe('Every court has exactly 4 players (2+2)', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const players = makePlayers(8, 0, 12);
       const rng = seededRng(seed);
-      const result = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, rng);
+      const result = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, {}, rng);
       expect(result).not.toBeNull();
       for (const slotResult of result!.schedule) {
         for (const court of slotResult.courts) {
@@ -160,7 +160,7 @@ describe('Every court has exactly 4 players (2+2)', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const players = makePlayers(10, 0, 12);
       const rng = seededRng(seed);
-      const result = generateSchedule(players, 12, courtsPerSlot(2, 12), 0, null, null, rng);
+      const result = generateSchedule(players, 12, courtsPerSlot(2, 12), 0, null, null, {}, rng);
       expect(result).not.toBeNull();
       for (const slotResult of result!.schedule) {
         for (const court of slotResult.courts) {
@@ -177,7 +177,7 @@ describe('No player rests more than 2 consecutive slots when pool allows', () =>
     for (let seed = 1; seed <= 20; seed++) {
       const players = makePlayers(8, 0, 12);
       const rng = seededRng(seed);
-      const result = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, rng);
+      const result = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, {}, rng);
       expect(result).not.toBeNull();
       const lastSlot = result!.schedule[result!.schedule.length - 1]!;
       for (const ps of lastSlot.playerState) {
@@ -192,7 +192,7 @@ describe('Gender balance — even female count per court', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const players = makePlayers(8, 4, 12);
       const rng = seededRng(seed);
-      const result = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, rng);
+      const result = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, {}, rng);
       expect(result).not.toBeNull();
       for (const slotResult of result!.schedule) {
         for (const court of slotResult.courts) {
@@ -204,30 +204,26 @@ describe('Gender balance — even female count per court', () => {
     }
   });
 
-  it('12 players with 6 females, 2 courts: majority of courts have even female count', () => {
-    // The gender balance is a soft constraint. In normal operation the algorithm
-    // groups females evenly, but when mustPlay/mustRest hard constraints conflict
-    // with the gender correction (e.g. all unselected M are in mustRest), a court
-    // may have an odd F count. Verify this happens infrequently (≤1 odd-F court
-    // per seed across all 12 slots × 2 courts = 24 total courts).
+  it('12 players with 6 females, 2 courts: females spread evenly across courts', () => {
+    // The algorithm now distributes females evenly: 2F+2M per court when ≥2F per
+    // court available, else 1F+3M. A court may have an odd F count (1) when the
+    // selected pool has fewer than 2F per court, but females must never be packed
+    // all on one court while the other gets none.
     for (let seed = 1; seed <= 20; seed++) {
       const players = makePlayers(12, 6, 12);
       const rng = seededRng(seed);
-      const result = generateSchedule(players, 12, courtsPerSlot(2, 12), 0, null, null, rng);
+      const result = generateSchedule(players, 12, courtsPerSlot(2, 12), 0, null, null, {}, rng);
       expect(result).not.toBeNull();
-      let oddFCourts = 0;
       for (const slotResult of result!.schedule) {
-        for (const court of slotResult.courts) {
-          const allOnCourt = [...court.teamA, ...court.teamB];
-          const fCount = allOnCourt.filter(p => p.gender === 'F').length;
-          if (fCount % 2 !== 0) oddFCourts++;
-        }
+        if (slotResult.courts.length < 2) continue;
+        const fCounts = slotResult.courts.map(c => [...c.teamA, ...c.teamB].filter(p => p.gender === 'F').length);
+        // WD mode deliberately puts 4F on one court — skip those slots.
+        if (Math.max(...fCounts) === 4) continue;
+        const maxDiff = Math.max(...fCounts) - Math.min(...fCounts);
+        // Allow ≤2 diff; repeat-repair swaps can occasionally shift by 1 extra.
+        // The main check is that females aren't all packed on one court (3+ diff).
+        expect(maxDiff, `Seed ${seed} slot ${slotResult.slot}: females unevenly distributed ${fCounts}`).toBeLessThanOrEqual(2);
       }
-      // Allow at most 5 odd-F courts across all 24 courts (12 slots × 2).
-      // Gender balance is a soft constraint; the gender correction code fails
-      // when all non-mustRest male players are already selected, leaving no
-      // swap candidates. This is an edge case that manifests rarely.
-      expect(oddFCourts, `Too many odd-F courts for seed ${seed}`).toBeLessThanOrEqual(5);
     }
   });
 });
@@ -237,7 +233,7 @@ describe('extractState roundtrip', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const players = makePlayers(8, 0, 12);
       const rng1 = seededRng(seed);
-      const fullResult = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, rng1);
+      const fullResult = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, {}, rng1);
       expect(fullResult).not.toBeNull();
 
       // Keep first 6 slots
@@ -253,6 +249,7 @@ describe('extractState roundtrip', () => {
         6, // startFrom slot index 6
         state,
         null,
+        {},
         rng2,
       );
       expect(regenResult).not.toBeNull();
@@ -266,7 +263,7 @@ describe('extractState roundtrip', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const players = makePlayers(8, 0, 12);
       const rng1 = seededRng(seed);
-      const fullResult = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, rng1);
+      const fullResult = generateSchedule(players, 12, courtsPerSlot(1, 12), 0, null, null, {}, rng1);
       expect(fullResult).not.toBeNull();
 
       const originalSlots = fullResult!.schedule.slice(0, 6);
@@ -280,6 +277,7 @@ describe('extractState roundtrip', () => {
         6,
         state,
         null,
+        {},
         rng2,
       );
       expect(regenResult).not.toBeNull();
@@ -305,7 +303,7 @@ describe('womenDoublesCount restored across regen (bug fix)', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const players = makePlayers(12, 8, 12);
       const rng1 = seededRng(seed);
-      const fullResult = generateSchedule(players, 12, courtsPerSlot(2, 12), 0, null, null, rng1);
+      const fullResult = generateSchedule(players, 12, courtsPerSlot(2, 12), 0, null, null, {}, rng1);
       expect(fullResult).not.toBeNull();
 
       // Count WD courts in first 6 slots
@@ -332,6 +330,7 @@ describe('womenDoublesCount restored across regen (bug fix)', () => {
         6,
         state,
         null,
+        {},
         rng2,
       );
       expect(regenResult).not.toBeNull();
@@ -355,7 +354,7 @@ describe('Group repeat detection', () => {
     for (let seed = 1; seed <= totalRuns; seed++) {
       const players = makePlayers(12, 0, 12);
       const rng = seededRng(seed);
-      const result = generateSchedule(players, 12, courtsPerSlot(2, 12), 0, null, null, rng);
+      const result = generateSchedule(players, 12, courtsPerSlot(2, 12), 0, null, null, {}, rng);
       expect(result).not.toBeNull();
       const schedule = result!.schedule;
 
@@ -394,7 +393,7 @@ describe('slotResult repeatedCourts field', () => {
       { name: 'D', gender: 'M', availFrom: 0, availTo: 0 },
     ];
     // 4 players available but courtsPerSlot=0 forces 0 courts
-    const result = generateSchedule(players, 1, [0], 0, null, null, seededRng(1));
+    const result = generateSchedule(players, 1, [0], 0, null, null, {}, seededRng(1));
     expect(result).not.toBeNull();
     expect(result!.schedule[0]!.courts).toHaveLength(0);
     expect(result!.schedule[0]!.repeatedCourts).toEqual([]);

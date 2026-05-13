@@ -32,7 +32,7 @@
     // Leave null to allow score entry by anyone (fine for local/trusted use).
     window.ADMIN_PIN = "1234";
     // window.ADMIN_PIN = "1234";
-    window.SHARE_API_BASE = null;
+    window.SHARE_API_BASE = "https://badminton-share-links.eamonsuen.workers.dev";
 
     window.DB = (() => {
       if (!window.FIREBASE_CONFIG || typeof firebase === 'undefined') return null;
@@ -116,7 +116,7 @@
 
     const groupKey = (idxs) => idxs.slice().sort((a, b) => a - b).join(',');
 
-    function* generateScheduleGen(players, totalSlots, courtsPerSlot, startFrom = 0, initialState = null, forcedFirstSlot = null) {
+    function* generateScheduleGen(players, totalSlots, courtsPerSlot, startFrom = 0, initialState = null, forcedFirstSlot = null, options = {}) {
       const n = players.length;
       if (n < 4) return null;
 
@@ -290,10 +290,13 @@
         } else {
           for (let c = 0; c < actualCourts; c++) {
             const courtsLeft = actualCourts - c;
-            if (remF.length >= 2 && remM.length >= 2 && Math.ceil(remF.length / courtsLeft) >= 2) {
+            const fPerCourt = courtsLeft > 0 ? Math.ceil(remF.length / courtsLeft) : 0;
+            if (fPerCourt >= 2 && remF.length >= 2 && remM.length >= 2) {
               courtGroups.push([...remF.splice(0, 2), ...remM.splice(0, 2)]);
             } else if (remF.length >= 4) {
               courtGroups.push(remF.splice(0, 4));
+            } else if (fPerCourt >= 1 && remM.length >= 3 && !options.preferMixedTeams) {
+              courtGroups.push([remF.splice(0, 1)[0], ...remM.splice(0, 3)]);
             } else {
               courtGroups.push(takeGroup());
             }
@@ -427,9 +430,9 @@
     }
 
     // Synchronous wrapper for regenerateRemaining (collects all yields)
-    function generateSchedule(players, totalSlots, courtsPerSlot, startFrom = 0, initialState = null, forcedFirstSlot = null) {
+    function generateSchedule(players, totalSlots, courtsPerSlot, startFrom = 0, initialState = null, forcedFirstSlot = null, options = {}) {
       let result = null;
-      for (result of generateScheduleGen(players, totalSlots, courtsPerSlot, startFrom, initialState, forcedFirstSlot));
+      for (result of generateScheduleGen(players, totalSlots, courtsPerSlot, startFrom, initialState, forcedFirstSlot, options));
       return result;
     }
 
@@ -517,6 +520,8 @@
       const [players, setPlayers] = useState(() => loadState("bp-players", []));
       const [nameInput, setNameInput] = useState("");
       const [genderInput, setGenderInput] = useState("M");
+      const [editingNameIdx, setEditingNameIdx] = useState(null);
+      const [preferMixedTeams, setPreferMixedTeams] = useState(() => loadState("bp-prefer-mixed-teams", false));
       const [totalMinutes, setTotalMinutes] = useState(() => loadState("bp-totalMinutes", DEFAULT_TOTAL_MINUTES));
       const [gameMinutes, setGameMinutes] = useState(() => loadState("bp-gameMinutes", DEFAULT_GAME_MINUTES));
       const [numCourts, setNumCourts] = useState(() => loadState("bp-numCourts", 1));
@@ -594,6 +599,7 @@
       useEffect(() => { localStorage.setItem("bp-extraCourt", JSON.stringify(extraCourt)); }, [extraCourt]);
       useEffect(() => { localStorage.setItem("bp-staggerMode", JSON.stringify(staggerMode)); }, [staggerMode]);
       useEffect(() => { localStorage.setItem("bp-sessionStart", JSON.stringify(sessionStart)); }, [sessionStart]);
+      useEffect(() => { localStorage.setItem("bp-prefer-mixed-teams", JSON.stringify(preferMixedTeams)); }, [preferMixedTeams]);
       useEffect(() => {
         if (result) {
           localStorage.setItem("bp-result", JSON.stringify(result));
@@ -864,7 +870,7 @@
         setCopied(false);
         setGenSlot(0);
         const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
-        const gen = generateScheduleGen(playersWithSkill, totalSlots, getCourtsPerSlot());
+        const gen = generateScheduleGen(playersWithSkill, totalSlots, getCourtsPerSlot(), 0, null, null, { preferMixedTeams });
         // Drive the generator with rAF for a live slot counter.
         // We only update setResult once at the end — calling it on every slot
         // triggers a full React re-render each time, which at Babel CDN speeds
@@ -888,7 +894,7 @@
         if (fromSlotCourts > 0) {
           for (let i = fromSlot - 1; i < totalSlots; i++) courtsArr[i] = fromSlotCourts;
         }
-        const newResult = generateSchedule(playersWithSkill, totalSlots, courtsArr, fromSlot - 1, state);
+        const newResult = generateSchedule(playersWithSkill, totalSlots, courtsArr, fromSlot - 1, state, null, { preferMixedTeams });
         if (!newResult) return;
         setScores(prev => {
           const next = {};
@@ -949,7 +955,7 @@
         const nameToIdx = new Map(playersWithSkill.map((p, i) => [p.name, i]));
         const courtsForced = editLayout.courts.map(court => court.map(n => nameToIdx.get(n)).filter(i => i !== undefined));
         if (courtsForced.some(c => c.length !== 4)) return;
-        const newResult = generateSchedule(playersWithSkill, totalSlots, getCourtsPerSlot(), slotIdx, state, { courts: courtsForced });
+        const newResult = generateSchedule(playersWithSkill, totalSlots, getCourtsPerSlot(), slotIdx, state, { courts: courtsForced }, { preferMixedTeams });
         if (!newResult) return;
         setScores(prev => {
           const next = {};
@@ -1291,6 +1297,19 @@
                   ))}
                 </div>
               </div>
+              <div style={{ flex: "0 0 auto" }}>
+                <label style={{ fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: "0.5px" }}>Mixed teams</label>
+                <div style={{ marginTop: 4 }}>
+                  <button onClick={() => { setPreferMixedTeams(v => !v); setResult(null); }}
+                    title={preferMixedTeams ? "Each game has 1F+1M per side (2F per court)" : "Females spread evenly across courts (1F per court when outnumbered)"}
+                    style={{
+                      background: preferMixedTeams ? C.pinkDim : C.card,
+                      color: preferMixedTeams ? "#fff" : C.textDim,
+                      border: `1px solid ${preferMixedTeams ? C.pinkDim : C.border}`,
+                      borderRadius: 6, padding: "8px 14px", fontSize: 13, fontWeight: 600, fontFamily: font,
+                    }}>{preferMixedTeams ? "1F+1M / side" : "Spread F"}</button>
+                </div>
+              </div>
             </div>
 
             {/* Empty state */}
@@ -1378,7 +1397,16 @@
                     display: "flex", alignItems: "center", gap: 10,
                     background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px",
                   }}>
-                    <span style={{ color: p.gender === "F" ? C.pink : C.accent, fontWeight: 700, fontSize: 14, minWidth: 70 }}>{p.name}</span>
+                    {editingNameIdx === i ? (
+                      <input autoFocus value={p.name}
+                        onChange={e => updatePlayer(i, "name", e.target.value)}
+                        onBlur={() => setEditingNameIdx(null)}
+                        onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") setEditingNameIdx(null); }}
+                        style={{ color: p.gender === "F" ? C.pink : C.accent, fontWeight: 700, fontSize: 14, width: 90, background: C.bg, border: `1px solid ${p.gender === "F" ? C.pinkDim : C.accentDim}`, borderRadius: 4, padding: "2px 6px", fontFamily: font, outline: "none" }} />
+                    ) : (
+                      <span onClick={() => setEditingNameIdx(i)} title="Click to edit name"
+                        style={{ color: p.gender === "F" ? C.pink : C.accent, fontWeight: 700, fontSize: 14, minWidth: 70, cursor: "text" }}>{p.name}</span>
+                    )}
                     <span style={{ fontSize: 11, color: C.textDim }}>{p.gender === "F" ? "♀" : "♂"}</span>
                     {winLoss[p.name] && (winLoss[p.name].wins + winLoss[p.name].losses) > 0 && (
                       <span style={{ fontSize: 11, color: C.textMuted }}>
