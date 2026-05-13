@@ -99,6 +99,9 @@ export interface PlannerState {
   showShareModal: boolean;
   sharedUrl: string;
   copiedShareUrl: boolean;
+  shareIsUpdate: boolean;
+  shareId: string | null;
+  shareToken: string | null;
 }
 
 export interface PlannerPersistedState {
@@ -113,6 +116,8 @@ export interface PlannerPersistedState {
   scores: ScoresMap;
   winLoss: WinLossMap;
   savedPlans: SavedPlan[];
+  shareId: string | null;
+  shareToken: string | null;
 }
 
 export interface ScheduleGridProps {

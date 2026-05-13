@@ -61,18 +61,27 @@ export function SavePlanModal({ needsPin, pinInput, pinError, setPinInput, submi
   );
 }
 
-export function ShareLinkModal({ copiedShareUrl, sharedUrl, copyShareUrl, close }) {
+export function ShareLinkModal({ copiedShareUrl, sharedUrl, shareIsUpdate, hasExisting, copyShareUrl, newShareLink, close }) {
+  const statusText = shareIsUpdate ? '✓ Schedule updated — same link reflects your latest changes.'
+    : 'Link copied to clipboard. Open it on any device to load this schedule.';
   return (
     <ModalShell maxWidth={480}>
-      <p style={{ fontWeight: 700, marginBottom: 4 }}>Share link</p>
-      <p style={{ fontSize: 12, color: C.textDim, marginBottom: 12 }}>{copiedShareUrl ? '✓ Copied!' : 'Link copied to clipboard.'} Open it on any device to load this schedule.</p>
+      <p style={{ fontWeight: 700, marginBottom: 4 }}>{shareIsUpdate ? 'Schedule updated' : 'Share link'}</p>
+      <p style={{ fontSize: 12, color: copiedShareUrl ? C.green : C.textDim, marginBottom: 12 }}>
+        {copiedShareUrl ? (shareIsUpdate ? '✓ Updated! Link copied.' : '✓ Copied!') : statusText}
+      </p>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <input readOnly value={sharedUrl} onFocus={e => e.target.select()} style={{ flex: 1, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', color: C.textDim, fontSize: 11, fontFamily: 'monospace', minWidth: 0 }} />
         <button onClick={copyShareUrl} style={{ background: copiedShareUrl ? C.green : C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 12px', fontWeight: 700, fontFamily: FONT, whiteSpace: 'nowrap' }}>
           {copiedShareUrl ? '✓ Copied' : 'Copy'}
         </button>
       </div>
-      <button onClick={close} style={{ marginTop: 12, width: '100%', background: 'transparent', color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px', fontFamily: FONT }}>Close</button>
+      {hasExisting && (
+        <button onClick={() => { close(); newShareLink(); }} style={{ marginTop: 8, width: '100%', background: 'transparent', color: C.textMuted, border: `1px dashed ${C.border}`, borderRadius: 6, padding: '7px', fontFamily: FONT, fontSize: 12 }}>
+          Generate a fresh link instead
+        </button>
+      )}
+      <button onClick={close} style={{ marginTop: 8, width: '100%', background: 'transparent', color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px', fontFamily: FONT }}>Close</button>
     </ModalShell>
   );
 }

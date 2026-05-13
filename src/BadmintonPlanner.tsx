@@ -86,6 +86,9 @@ function BadmintonPlanner() {
     showShareModal,
     sharedUrl,
     copiedShareUrl,
+    shareIsUpdate,
+    shareId,
+    shareToken,
   } = state;
 
   const totalSlots = Math.floor(totalMinutes / gameMinutes);
@@ -507,7 +510,7 @@ function BadmintonPlanner() {
 
   const deletePlan = useCallback((id) => patchState({ savedPlans: savedPlans.filter(plan => plan.id !== id) }), [savedPlans]);
 
-  const shareLink = useCallback(async () => {
+  const shareLink = useCallback(async (forceNew = false) => {
     if (!result) return;
     const pwith = getPlayersWithAvailability();
     const data = {
@@ -532,17 +535,26 @@ function BadmintonPlanner() {
 
     if (apiBase) {
       try {
-        const response = await fetch(`${apiBase}/shares`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data }),
-        });
-        if (!response.ok) throw new Error(`Share save failed: ${response.status}`);
+        const existingId = !forceNew ? shareId : null;
+        const existingToken = !forceNew ? shareToken : null;
+        const isUpdate = !!(existingId && existingToken);
+
+        const response = await fetch(
+          isUpdate ? `${apiBase}/shares/${encodeURIComponent(existingId!)}` : `${apiBase}/shares`,
+          {
+            method: isUpdate ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(isUpdate ? { data, token: existingToken } : { data }),
+          },
+        );
+        if (!response.ok) throw new Error(`Share ${isUpdate ? 'update' : 'save'} failed: ${response.status}`);
         const payload = await response.json();
-        if (payload?.id) {
-          const url = `${window.location.origin}${window.location.pathname}?share=${encodeURIComponent(payload.id)}`;
+        const id = isUpdate ? existingId! : payload?.id;
+        const token = isUpdate ? existingToken! : payload?.token;
+        if (id) {
+          const url = `${window.location.origin}${window.location.pathname}?share=${encodeURIComponent(id)}`;
           copyText(url, () => {
-            patchState({ sharedUrl: url, copiedShareUrl: true, showShareModal: true });
+            patchState({ sharedUrl: url, copiedShareUrl: true, showShareModal: true, shareIsUpdate: isUpdate, shareId: id, shareToken: token });
             setTimeout(() => patchState({ copiedShareUrl: false }), 2000);
           });
           return;
@@ -550,12 +562,13 @@ function BadmintonPlanner() {
       } catch {}
     }
 
+    // Fallback: encode full schedule in URL hash (no token, always new)
     const fallbackUrl = `${window.location.origin}${window.location.pathname}#share=${btoa(JSON.stringify(data))}`;
     copyText(fallbackUrl, () => {
-      patchState({ sharedUrl: fallbackUrl, copiedShareUrl: true, showShareModal: true });
+      patchState({ sharedUrl: fallbackUrl, copiedShareUrl: true, showShareModal: true, shareIsUpdate: false });
       setTimeout(() => patchState({ copiedShareUrl: false }), 2000);
     });
-  }, [gameMinutes, getPlayersWithAvailability, numCourts, result, scores]);
+  }, [gameMinutes, getPlayersWithAvailability, numCourts, result, scores, shareId, shareToken]);
 
   const copyShareUrl = useCallback(() => {
     copyText(sharedUrl, () => {
@@ -635,7 +648,7 @@ function BadmintonPlanner() {
       <div style={{ maxWidth: 780, margin: '0 auto' }}>
         {showPinPrompt && <PinPromptModal pinInput={pinInput} pinError={pinError} setPinInput={value => patchState({ pinInput: value, pinError: false })} submitPin={submitPin} close={() => patchState({ showPinPrompt: false, pinInput: '', pinError: false })} />}
         {showSavePlan && <SavePlanModal needsPin={window.ADMIN_PIN && !isAdmin} pinInput={pinInput} pinError={pinError} setPinInput={value => patchState({ pinInput: value, pinError: false })} submitPin={submitPin} saveTag={saveTag} setSaveTag={value => patchState({ saveTag: value })} savePlan={savePlan} close={() => patchState({ showSavePlan: false, pinInput: '', pinError: false })} />}
-        {showShareModal && <ShareLinkModal copiedShareUrl={copiedShareUrl} sharedUrl={sharedUrl} copyShareUrl={copyShareUrl} close={() => patchState({ showShareModal: false })} />}
+        {showShareModal && <ShareLinkModal copiedShareUrl={copiedShareUrl} sharedUrl={sharedUrl} shareIsUpdate={shareIsUpdate} hasExisting={!!(shareId && shareToken)} copyShareUrl={copyShareUrl} newShareLink={() => shareLink(true)} close={() => patchState({ showShareModal: false })} />}
         {showShareLoad && pendingShare && <ShareLoadModal pendingShare={pendingShare} loadSharedSchedule={loadSharedSchedule} dismiss={() => patchState({ showShareLoad: false, pendingShare: null })} />}
         {showImport && <ImportModal importText={importText} importError={importError} setImportText={value => patchState({ importText: value, importError: '' })} importSchedule={importSchedule} close={() => patchState({ showImport: false, importText: '', importError: '' })} />}
 

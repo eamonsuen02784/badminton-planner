@@ -14,6 +14,8 @@ const STORAGE_KEYS = {
   scores: 'bp-scores',
   winLoss: 'bp-winloss',
   savedPlans: 'bp-saved-plans',
+  shareId: 'bp-share-id',
+  shareToken: 'bp-share-token',
 } as const;
 
 function loadState<T>(key: string, fallback: T): T {
@@ -63,6 +65,9 @@ function createInitialState(): PlannerState {
     showShareModal: false,
     sharedUrl: '',
     copiedShareUrl: false,
+    shareIsUpdate: false,
+    shareId: loadState(STORAGE_KEYS.shareId, null),
+    shareToken: loadState(STORAGE_KEYS.shareToken, null),
   };
 }
 
@@ -97,6 +102,8 @@ export function usePlannerState() {
       scores: state.scores,
       winLoss: state.winLoss,
       savedPlans: state.savedPlans,
+      shareId: state.shareId,
+      shareToken: state.shareToken,
     };
 
     for (const [key, storageKey] of Object.entries(STORAGE_KEYS)) {
@@ -116,6 +123,8 @@ export function usePlannerState() {
     state.scores,
     state.winLoss,
     state.savedPlans,
+    state.shareId,
+    state.shareToken,
   ]);
 
   const setField = <K extends keyof PlannerState>(key: K, value: PlannerState[K]) =>
