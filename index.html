@@ -558,6 +558,9 @@
       const [showShareModal, setShowShareModal] = useState(false);
       const [sharedUrl, setSharedUrl] = useState('');
       const [copiedShareUrl, setCopiedShareUrl] = useState(false);
+      const [shareIsUpdate, setShareIsUpdate] = useState(false);
+      const [shareId, setShareId] = useState(() => loadState("bp-share-id", null));
+      const [shareToken, setShareToken] = useState(() => loadState("bp-share-token", null));
       const scheduleRef = useRef(null);
 
       const totalSlots = Math.floor(totalMinutes / gameMinutes);
@@ -600,6 +603,8 @@
       useEffect(() => { localStorage.setItem("bp-staggerMode", JSON.stringify(staggerMode)); }, [staggerMode]);
       useEffect(() => { localStorage.setItem("bp-sessionStart", JSON.stringify(sessionStart)); }, [sessionStart]);
       useEffect(() => { localStorage.setItem("bp-prefer-mixed-teams", JSON.stringify(preferMixedTeams)); }, [preferMixedTeams]);
+      useEffect(() => { localStorage.setItem("bp-share-id", JSON.stringify(shareId)); }, [shareId]);
+      useEffect(() => { localStorage.setItem("bp-share-token", JSON.stringify(shareToken)); }, [shareToken]);
       useEffect(() => {
         if (result) {
           localStorage.setItem("bp-result", JSON.stringify(result));
@@ -630,8 +635,25 @@
         setSavedPlans(prev => prev.filter(p => p.id !== id));
       }, []);
 
-      // Detect share hash on mount
+      // Detect share on mount — ?share=<id> (API) or #share=<base64> (fallback)
       useEffect(() => {
+        const apiBase = window.SHARE_API_BASE ? window.SHARE_API_BASE.replace(/\/+$/, '') : null;
+        const params = new URLSearchParams(window.location.search);
+        const shareIdParam = params.get('share');
+        if (shareIdParam && apiBase) {
+          fetch(`${apiBase}/shares/${encodeURIComponent(shareIdParam)}`)
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(payload => {
+              const data = payload?.data;
+              if (data?.v === 1 && data.p && data.slots) {
+                setPendingShare(data);
+                setShowShareLoad(true);
+                window.history.replaceState(null, '', window.location.pathname);
+              }
+            })
+            .catch(() => {});
+          return;
+        }
         const hash = window.location.hash;
         if (!hash.startsWith('#share=')) return;
         try {
@@ -644,13 +666,26 @@
         } catch (e) {}
       }, []);
 
-      const shareLink = useCallback(() => {
+      const copyTextToClipboard = (text) => {
+        const ta = document.createElement("textarea");
+        ta.value = text; ta.style.position = "fixed"; ta.style.left = "-9999px";
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand("copy"); } catch (e) {}
+        document.body.removeChild(ta);
+      };
+
+      const shareLink = useCallback(async (forceNew = false) => {
         if (!result) return;
         const pwith = getPlayersWithAvailability();
         const data = {
           v: 1,
           p: pwith.map(p => [p.name, p.gender]),
           cfg: { g: gameMinutes, c: numCourts },
+          scores: Object.fromEntries(
+            Object.entries(scores)
+              .filter(([, v]) => v?.applied)
+              .map(([k, v]) => [k, { a: v.a, b: v.b }])
+          ),
           slots: result.schedule.map(s => ({
             s: s.slot,
             c: s.courts.map(court => [
@@ -660,18 +695,42 @@
             sit: (s.sitting || []).map(p => pwith.findIndex(pl => pl.name === p.name)),
           })),
         };
-        const encoded = btoa(JSON.stringify(data));
-        const url = `${window.location.origin}${window.location.pathname}#share=${encoded}`;
-        const ta = document.createElement("textarea");
-        ta.value = url; ta.style.position = "fixed"; ta.style.left = "-9999px";
-        document.body.appendChild(ta); ta.select();
-        try { document.execCommand("copy"); } catch (e) {}
-        document.body.removeChild(ta);
-        setSharedUrl(url);
-        setCopiedShareUrl(true);
-        setShowShareModal(true);
+
+        const apiBase = window.SHARE_API_BASE ? window.SHARE_API_BASE.replace(/\/+$/, '') : null;
+        if (apiBase) {
+          try {
+            const existingId = !forceNew ? shareId : null;
+            const existingToken = !forceNew ? shareToken : null;
+            const isUpdate = !!(existingId && existingToken);
+            const response = await fetch(
+              isUpdate ? `${apiBase}/shares/${encodeURIComponent(existingId)}` : `${apiBase}/shares`,
+              {
+                method: isUpdate ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(isUpdate ? { data, token: existingToken } : { data }),
+              }
+            );
+            if (!response.ok) throw new Error(`${response.status}`);
+            const payload = await response.json();
+            const id = isUpdate ? existingId : payload?.id;
+            const token = isUpdate ? existingToken : payload?.token;
+            if (id) {
+              const url = `${window.location.origin}${window.location.pathname}?share=${encodeURIComponent(id)}`;
+              copyTextToClipboard(url);
+              setSharedUrl(url); setCopiedShareUrl(true); setShowShareModal(true);
+              setShareIsUpdate(isUpdate); setShareId(id); setShareToken(token);
+              setTimeout(() => setCopiedShareUrl(false), 2000);
+              return;
+            }
+          } catch (e) {}
+        }
+
+        // Fallback: encode full schedule in URL hash
+        const fallbackUrl = `${window.location.origin}${window.location.pathname}#share=${btoa(JSON.stringify(data))}`;
+        copyTextToClipboard(fallbackUrl);
+        setSharedUrl(fallbackUrl); setCopiedShareUrl(true); setShowShareModal(true); setShareIsUpdate(false);
         setTimeout(() => setCopiedShareUrl(false), 2000);
-      }, [result, getPlayersWithAvailability, gameMinutes, numCourts]);
+      }, [result, getPlayersWithAvailability, gameMinutes, numCourts, scores, shareId, shareToken]);
 
       const loadSharedSchedule = useCallback(() => {
         if (!pendingShare) return;
@@ -1124,26 +1183,29 @@
             {showShareModal && (
               <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
                 <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, width: '100%', maxWidth: 480 }}>
-                  <p style={{ fontWeight: 700, marginBottom: 4 }}>Share link</p>
+                  <p style={{ fontWeight: 700, marginBottom: 4 }}>{shareIsUpdate ? 'Schedule updated' : 'Share link'}</p>
                   <p style={{ fontSize: 12, color: C.textDim, marginBottom: 12 }}>
-                    {copiedShareUrl ? '✓ Copied!' : 'Link copied to clipboard.'} Open it on any device to load this schedule.
+                    {copiedShareUrl ? '✓ Copied!' : 'Link copied to clipboard.'} {shareIsUpdate ? 'The existing link now shows the latest schedule.' : 'Open it on any device to load this schedule.'}
                   </p>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <input readOnly value={sharedUrl}
                       onFocus={e => e.target.select()}
                       style={{ flex: 1, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', color: C.textDim, fontSize: 11, fontFamily: 'monospace', minWidth: 0 }} />
                     <button onClick={() => {
-                      const ta = document.createElement("textarea"); ta.value = sharedUrl;
-                      ta.style.position = "fixed"; ta.style.left = "-9999px";
-                      document.body.appendChild(ta); ta.select();
-                      try { document.execCommand("copy"); setCopiedShareUrl(true); setTimeout(() => setCopiedShareUrl(false), 2000); } catch(e) {}
-                      document.body.removeChild(ta);
+                      copyTextToClipboard(sharedUrl);
+                      setCopiedShareUrl(true); setTimeout(() => setCopiedShareUrl(false), 2000);
                     }} style={{ background: copiedShareUrl ? C.green : C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 12px', fontWeight: 700, fontFamily: font, whiteSpace: 'nowrap' }}>
                       {copiedShareUrl ? '✓ Copied' : 'Copy'}
                     </button>
                   </div>
+                  {shareId && shareToken && (
+                    <button onClick={() => { setShowShareModal(false); shareLink(true); }}
+                      style={{ marginTop: 8, width: '100%', background: 'transparent', color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px', fontFamily: font, fontSize: 12 }}>
+                      Generate a fresh link instead
+                    </button>
+                  )}
                   <button onClick={() => setShowShareModal(false)}
-                    style={{ marginTop: 12, width: '100%', background: 'transparent', color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px', fontFamily: font }}>
+                    style={{ marginTop: 8, width: '100%', background: 'transparent', color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px', fontFamily: font }}>
                     Close
                   </button>
                 </div>

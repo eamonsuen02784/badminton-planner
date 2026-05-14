@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Badminton Match Planner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0f1a; }
+    input[type=range] { cursor: pointer; }
+    button { cursor: pointer; }
+    .settings-row { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+    .schedule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .action-buttons { display: flex; gap: 8px; margin-bottom: 24px; }
+    .player-tracker { margin-top: 10px; padding-top: 10px; display: flex; justify-content: space-around; flex-wrap: wrap; gap: 8px; }
+    .stats-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+    .stat-item { flex: 1 1 calc(50% - 8px); min-width: 140px; }
+    @media (max-width: 600px) {
+      .schedule-grid { grid-template-columns: 1fr; }
+      .settings-row > div { flex: 1 1 100% !important; }
+      .action-buttons { flex-wrap: wrap; }
+      .action-buttons .generate-btn { flex: 1 1 100%; order: -1; }
+      .stat-item { flex: 1 1 100%; }
+      .avail-buttons { flex-wrap: wrap; }
+    }
+  </style>
+  <script>
+    window.FIREBASE_CONFIG = null;
+    window.ADMIN_PIN = "1234";
+    window.DB = null;
+    window.SHARE_API_BASE = "https://badminton-share-links.eamonsuen.workers.dev";
+  </script>
+  <script type="module" crossorigin src="/badminton-planner/assets/index-vite-CL1QZpc-.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>
