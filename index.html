@@ -646,8 +646,7 @@
             .then(payload => {
               const data = payload?.data;
               if (data?.v === 1 && data.p && data.slots) {
-                setPendingShare(data);
-                setShowShareLoad(true);
+                applySharePayload(data);
                 window.history.replaceState(null, '', window.location.pathname);
               }
             })
@@ -659,8 +658,7 @@
         try {
           const data = JSON.parse(atob(hash.slice(7)));
           if (data.v === 1 && data.p && data.slots) {
-            setPendingShare(data);
-            setShowShareLoad(true);
+            applySharePayload(data);
             window.history.replaceState(null, '', window.location.pathname);
           }
         } catch (e) {}
@@ -732,9 +730,8 @@
         setTimeout(() => setCopiedShareUrl(false), 2000);
       }, [result, getPlayersWithAvailability, gameMinutes, numCourts, scores, shareId, shareToken]);
 
-      const loadSharedSchedule = useCallback(() => {
-        if (!pendingShare) return;
-        const { p: sp, cfg, slots } = pendingShare;
+      const applySharePayload = useCallback((data) => {
+        const { p: sp, cfg, slots, scores: sharedScores } = data;
         const n = sp.length;
         const gp = new Array(n).fill(0);
         const cp = new Array(n).fill(0);
@@ -760,17 +757,27 @@
             repeatedCourts: [],
           };
         });
-        const newPlayers = sp.map(([name, gender]) => ({
+        const restoredScores = {};
+        newSchedule.forEach(slot => {
+          slot.courts.forEach((court, ci) => {
+            const key = `s${slot.slot}c${ci}`;
+            const s = sharedScores?.[key];
+            if (!s) return;
+            restoredScores[key] = {
+              a: s.a, b: s.b, applied: true,
+              teamA: court.teamA.map(p => p.name),
+              teamB: court.teamB.map(p => p.name),
+            };
+          });
+        });
+        setPlayers(sp.map(([name, gender]) => ({
           name, gender, skill: 2, availFrom: 0, availTo: slots.length - 1, group: "full", leavesAt: null,
-        }));
-        setPlayers(newPlayers);
+        })));
         if (cfg?.g) setGameMinutes(cfg.g);
         if (cfg?.c) setNumCourts(cfg.c);
         setResult({ schedule: newSchedule, gamesPlayed: [...gp] });
-        setScores({});
-        setShowShareLoad(false);
-        setPendingShare(null);
-      }, [pendingShare]);
+        setScores(restoredScores);
+      }, []);
 
       const getCourtsPerSlot = useCallback(() => {
         return Array.from({ length: totalSlots }, (_, slot) => {
@@ -1212,24 +1219,6 @@
               </div>
             )}
 
-            {/* Load shared schedule modal */}
-            {showShareLoad && pendingShare && (
-              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, width: '100%', maxWidth: 400 }}>
-                  <p style={{ fontWeight: 700, marginBottom: 4 }}>Load shared schedule?</p>
-                  <p style={{ fontSize: 12, color: C.textDim, marginBottom: 16 }}>
-                    {pendingShare.p.length} players · {pendingShare.slots.length} slots
-                    <br />This will replace your current schedule and player list.
-                  </p>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={loadSharedSchedule}
-                      style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '10px', fontWeight: 700, fontFamily: font }}>Load</button>
-                    <button onClick={() => { setShowShareLoad(false); setPendingShare(null); }}
-                      style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px 16px', fontFamily: font }}>Dismiss</button>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Import modal */}
             {showImport && (
