@@ -5,8 +5,8 @@ import {
   ref,
   push,
   set,
+  get,
   onValue,
-  off,
   type Database,
 } from 'firebase/database';
 
@@ -72,13 +72,9 @@ export function updateShare(shareId: string, payload: unknown): void {
   set(ref(database, `shares/${shareId}`), payload);
 }
 
-export function subscribeToShare(shareId: string, callback: (payload: unknown) => void): () => void {
+export async function fetchShare(shareId: string): Promise<unknown | null> {
   const database = getDb();
-  if (!database) return () => {};
-  const shareRef = ref(database, `shares/${shareId}`);
-  onValue(shareRef, snapshot => {
-    const data = snapshot.val();
-    if (data) callback(data);
-  });
-  return () => off(shareRef);
+  if (!database) return null;
+  const snapshot = await get(ref(database, `shares/${shareId}`));
+  return snapshot.val();
 }

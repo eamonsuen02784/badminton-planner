@@ -21,7 +21,7 @@ import {
   saveWinLoss,
   createShare,
   updateShare,
-  subscribeToShare,
+  fetchShare,
 } from './firebase';
 
 function normalizeApiBase(base) {
@@ -99,7 +99,7 @@ function BadmintonPlanner() {
     shareIsUpdate,
     shareId,
     shareToken,
-    isLiveSession,
+    isSharedSession,
     preferMixedTeams,
     isConfirmed,
     pendingOverwrite,
@@ -170,8 +170,15 @@ function BadmintonPlanner() {
     const urlShareId = params.get('share');
 
     if (urlShareId && isFirebaseConfigured()) {
-      patchState({ shareId: urlShareId, isLiveSession: true });
-      window.history.replaceState(null, '', window.location.pathname);
+      fetchShare(urlShareId)
+        .then(data => {
+          if (data?.v === 1 && data.p && data.slots) {
+            applySharePayload(data);
+            patchState({ shareId: urlShareId, isSharedSession: true });
+          }
+        })
+        .catch(() => {})
+        .finally(() => window.history.replaceState(null, '', window.location.pathname));
       return;
     }
 
@@ -203,20 +210,6 @@ function BadmintonPlanner() {
       }
     } catch {}
   }, []);
-
-  const isApplyingRemoteRef = useRef(false);
-
-  useEffect(() => {
-    if (!isLiveSession || !shareId || !isFirebaseConfigured()) return;
-    const unsubscribe = subscribeToShare(shareId, data => {
-      if (data?.v === 1 && data.p && data.slots) {
-        isApplyingRemoteRef.current = true;
-        applySharePayload(data);
-        setTimeout(() => { isApplyingRemoteRef.current = false; }, 0);
-      }
-    });
-    return unsubscribe;
-  }, [isLiveSession, shareId]);
 
   const slotTime = useCallback((slotIdx) => {
     const startMin = (slotIdx - 1) * gameMinutes;
@@ -287,16 +280,6 @@ function BadmintonPlanner() {
       confirmed: isConfirmed,
     };
   }, [gameMinutes, getPlayersWithAvailability, isConfirmed, numCourts, result, scores]);
-
-  useEffect(() => {
-    if (!isLiveSession || !shareId || !isFirebaseConfigured() || !result) return;
-    if (isApplyingRemoteRef.current) return;
-    const t = setTimeout(() => {
-      const payload = buildSharePayload();
-      if (payload) updateShare(shareId, payload);
-    }, 600);
-    return () => clearTimeout(t);
-  }, [isLiveSession, shareId, buildSharePayload]);
 
   const computeSkill = useCallback((name) => {
     const wl = winLoss[name];
@@ -416,7 +399,7 @@ function BadmintonPlanner() {
       patchState({ importError: 'Could not parse schedule — paste the full copied text.' });
       return;
     }
-    patchState({ result: parsed, scores: {}, showImport: false, importText: '', importError: '', isConfirmed: false, loadedPlanId: null, shareId: null, shareToken: null, isLiveSession: false });
+    patchState({ result: parsed, scores: {}, showImport: false, importText: '', importError: '', isConfirmed: false, loadedPlanId: null });
   }, [importText, parseScheduleText]);
 
   const importSchedule = useCallback(() => {
@@ -429,7 +412,7 @@ function BadmintonPlanner() {
 
   const runGenerate = useCallback(() => {
     if (players.length < 4 || isGenerating) return;
-    patchState({ isGenerating: true, result: null, scores: {}, copied: false, genSlot: 0, isConfirmed: false, loadedPlanId: null, shareId: null, shareToken: null, isLiveSession: false });
+    patchState({ isGenerating: true, result: null, scores: {}, copied: false, genSlot: 0, isConfirmed: false, loadedPlanId: null });
     const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
     const gen = generateScheduleGen(playersWithSkill, totalSlots, getCourtsPerSlot(), 0, null, null, { preferMixedTeams });
     let lastValue = null;
@@ -483,7 +466,7 @@ function BadmintonPlanner() {
   }, [isConfirmed, players.length, result, runRegenerateRemaining]);
 
   const runClearSchedule = useCallback(() => {
-    patchState({ result: null, scores: {}, fromSlot: 1, isConfirmed: false, loadedPlanId: null, shareId: null, shareToken: null, isLiveSession: false });
+    patchState({ result: null, scores: {}, fromSlot: 1, isConfirmed: false, loadedPlanId: null });
   }, []);
 
   const clearSchedule = useCallback(() => {
@@ -695,10 +678,15 @@ function BadmintonPlanner() {
         loadedPlanId: newId,
       });
     }
-  }, [loadedPlanId, result, saveTag, savedPlans]);
+
+    if (isSharedSession && shareId && isFirebaseConfigured()) {
+      const payload = buildSharePayload();
+      if (payload) updateShare(shareId, payload);
+    }
+  }, [buildSharePayload, isSharedSession, loadedPlanId, result, saveTag, savedPlans, shareId]);
 
   const loadPlan = useCallback((plan) => {
-    patchState({ result: plan.result, scores: {}, activeTab: 'schedule', isConfirmed: false, loadedPlanId: plan.id, shareId: null, shareToken: null, isLiveSession: false });
+    patchState({ result: plan.result, scores: {}, activeTab: 'schedule', isConfirmed: false, loadedPlanId: plan.id, shareId: null, shareToken: null, isSharedSession: false });
   }, []);
 
   const deletePlan = useCallback((id) => {
@@ -717,7 +705,7 @@ function BadmintonPlanner() {
       const id = existingId || createShare(data);
       if (existingId) updateShare(existingId, data);
       if (id) {
-        patchState({ shareId: id, shareToken: null, isLiveSession: true });
+        patchState({ shareId: id, shareToken: null, isSharedSession: true });
         const url = `${window.location.origin}${window.location.pathname}?share=${encodeURIComponent(id)}`;
         copyText(url, () => {
           patchState({ sharedUrl: url, copiedShareUrl: true, showShareModal: true, shareIsUpdate: !!existingId });
@@ -841,8 +829,8 @@ function BadmintonPlanner() {
     <div style={{ background: C.bg, minHeight: '100vh', color: C.text, fontFamily: FONT, padding: '24px 16px' }}>
       <div style={{ maxWidth: 780, margin: '0 auto' }}>
         {showPinPrompt && <PinPromptModal pinInput={pinInput} pinError={pinError} setPinInput={value => patchState({ pinInput: value, pinError: false })} submitPin={submitPin} close={() => patchState({ showPinPrompt: false, pinInput: '', pinError: false })} />}
-        {showSavePlan && <SavePlanModal needsPin={window.ADMIN_PIN && !isAdmin} pinInput={pinInput} pinError={pinError} setPinInput={value => patchState({ pinInput: value, pinError: false })} submitPin={submitPin} saveTag={saveTag} setSaveTag={value => patchState({ saveTag: value })} savePlan={savePlan} canUpdate={loadedPlanId != null && savedPlans.some(p => p.id === loadedPlanId)} savedPlans={savedPlans} close={() => patchState({ showSavePlan: false, pinInput: '', pinError: false })} />}
-        {showShareModal && <ShareLinkModal copiedShareUrl={copiedShareUrl} sharedUrl={sharedUrl} shareIsUpdate={shareIsUpdate} hasExisting={isFirebaseConfigured() ? !!shareId : !!(shareId && shareToken)} live={isFirebaseConfigured()} copyShareUrl={copyShareUrl} newShareLink={() => shareLink(true)} close={() => patchState({ showShareModal: false })} />}
+        {showSavePlan && <SavePlanModal needsPin={window.ADMIN_PIN && !isAdmin} pinInput={pinInput} pinError={pinError} setPinInput={value => patchState({ pinInput: value, pinError: false })} submitPin={submitPin} saveTag={saveTag} setSaveTag={value => patchState({ saveTag: value })} savePlan={savePlan} canUpdate={loadedPlanId != null && savedPlans.some(p => p.id === loadedPlanId)} savedPlans={savedPlans} isSharedSession={isSharedSession} close={() => patchState({ showSavePlan: false, pinInput: '', pinError: false })} />}
+        {showShareModal && <ShareLinkModal copiedShareUrl={copiedShareUrl} sharedUrl={sharedUrl} shareIsUpdate={shareIsUpdate} hasExisting={isFirebaseConfigured() ? !!shareId : !!(shareId && shareToken)} copyShareUrl={copyShareUrl} newShareLink={() => shareLink(true)} close={() => patchState({ showShareModal: false })} />}
         {showImport && <ImportModal importText={importText} importError={importError} setImportText={value => patchState({ importText: value, importError: '' })} importSchedule={importSchedule} close={() => patchState({ showImport: false, importText: '', importError: '' })} />}
 
         <div style={{ marginBottom: 28, borderBottom: `1px solid ${C.border}`, paddingBottom: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>

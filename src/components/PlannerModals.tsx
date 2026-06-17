@@ -48,7 +48,7 @@ export function ConfirmOverwriteModal({ onConfirm, onCancel }) {
   );
 }
 
-export function SavePlanModal({ needsPin, pinInput, pinError, setPinInput, submitPin, saveTag, setSaveTag, savePlan, canUpdate, savedPlans, close }) {
+export function SavePlanModal({ needsPin, pinInput, pinError, setPinInput, submitPin, saveTag, setSaveTag, savePlan, canUpdate, savedPlans, isSharedSession, close }) {
   const trimmedTag = saveTag.trim().toLowerCase();
   const duplicateTag = !canUpdate && trimmedTag && (savedPlans || []).some(p => p.tag.trim().toLowerCase() === trimmedTag);
   return (
@@ -74,6 +74,11 @@ export function SavePlanModal({ needsPin, pinInput, pinError, setPinInput, submi
               A saved plan named "{saveTag.trim()}" already exists — saving will update it instead of creating a duplicate.
             </p>
           )}
+          {isSharedSession && (
+            <p style={{ fontSize: 11, color: C.accent, marginTop: 6 }}>
+              You opened this from a shared link — saving will also push your current changes to everyone with that link.
+            </p>
+          )}
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button onClick={() => savePlan(canUpdate ? 'update' : undefined)} disabled={!saveTag.trim()} style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '10px', fontWeight: 700, fontFamily: FONT, opacity: saveTag.trim() ? 1 : 0.4 }}>{canUpdate ? 'Update' : 'Save'}</button>
             <button onClick={close} style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px 16px', fontFamily: FONT }}>Cancel</button>
@@ -89,10 +94,9 @@ export function SavePlanModal({ needsPin, pinInput, pinError, setPinInput, submi
   );
 }
 
-export function ShareLinkModal({ copiedShareUrl, sharedUrl, shareIsUpdate, hasExisting, live, copyShareUrl, newShareLink, close }) {
+export function ShareLinkModal({ copiedShareUrl, sharedUrl, shareIsUpdate, hasExisting, copyShareUrl, newShareLink, close }) {
   const statusText = shareIsUpdate ? '✓ Schedule updated — same link reflects your latest changes.'
-    : live ? 'Link copied to clipboard. Anyone who opens it sees live updates — edits sync instantly both ways.'
-    : 'Link copied to clipboard. Open it on any device to load this schedule.';
+    : 'Link copied to clipboard. Anyone who opens it sees this schedule. Hit Save after editing to push your changes to the same link.';
   return (
     <ModalShell maxWidth={480}>
       <p style={{ fontWeight: 700, marginBottom: 4 }}>{shareIsUpdate ? 'Schedule updated' : 'Share link'}</p>

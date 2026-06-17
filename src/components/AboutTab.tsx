@@ -90,25 +90,26 @@ export default function AboutTab() {
           of always creating a new copy.</Row>
       </Section>
 
-      <Section title="Sharing & live sync">
+      <Section title="Sharing">
         <Row label="Share">Generates a link that auto-loads the schedule the moment someone opens it — no
           confirmation click needed.</Row>
-        <Row label="Live updates">Everyone viewing or editing that link — players, schedule, scores, and
-          confirm status — sees changes from anyone else within about a second. No refreshing required, and
-          there's no separate "save and resend" step; editing the schedule on your end updates the same link
-          everyone already has.</Row>
-        <Row label="Edit access">Viewing a shared link never requires anything. Actually editing it (scores,
-          regenerating, confirming) still needs the admin PIN, same as editing locally.</Row>
+        <Row label="Opening it">Loads a snapshot of the schedule as of whenever it was last saved to that
+          link — it doesn't keep updating live in the background while you're looking at it.</Row>
+        <Row label="Pushing changes">Editing (scores, regenerating, confirming) after opening a shared link
+          stays local until you hit Save — that's the one action that pushes your current state back to the
+          same link for everyone else to see next time they open it.</Row>
+        <Row label="Edit access">Viewing a shared link never requires anything. Actually editing it still
+          needs the admin PIN, same as editing locally.</Row>
       </Section>
 
       <Section title="Architecture">
         <Row label="Frontend">React + TypeScript, built with Vite. Local-only sessions keep all state in
-          localStorage; shared sessions sync live through a small cloud database (see below).</Row>
+          localStorage; a tab viewing a shared link keeps that schedule in memory only, so it never overwrites
+          your own local copy.</Row>
         <Row label="Hosting">Deployed to GitHub Pages. A GitHub Actions workflow builds and publishes the
           site automatically on every push to main.</Row>
-        <Row label="Live sync">A Firebase Realtime Database backs the share-link feature — opening a share
-          link subscribes to a live document instead of fetching a one-time snapshot, and edits push straight
-          back to it.</Row>
+        <Row label="Sharing">A Firebase Realtime Database backs the share-link feature — opening a share
+          link fetches it once, and hitting Save pushes your current state back to that same document.</Row>
         <Row label="Security">Database rules restrict access to only the paths the app actually uses
           (shares and win/loss records), and Firebase App Check (reCAPTCHA v3) rejects any request that
           doesn't come from the real deployed page — so a stray script or curl call can't read or write the

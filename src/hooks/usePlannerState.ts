@@ -79,7 +79,7 @@ function createInitialState(): PlannerState {
     shareIsUpdate: false,
     shareId: null,
     shareToken: null,
-    isLiveSession: false,
+    isSharedSession: false,
     preferMixedTeams: loadState(STORAGE_KEYS.preferMixedTeams, false),
     isConfirmed: loadState(STORAGE_KEYS.isConfirmed, false),
     pendingOverwrite: null,
@@ -131,7 +131,7 @@ export function usePlannerState() {
     const liveSessionExempt = new Set(['players', 'result', 'scores', 'isConfirmed']);
 
     for (const [key, storageKey] of Object.entries(STORAGE_KEYS)) {
-      if (state.isLiveSession && liveSessionExempt.has(key)) continue;
+      if (state.isSharedSession && liveSessionExempt.has(key)) continue;
       const value = persisted[key as keyof PlannerPersistedState];
       if (key === 'result' && !value) localStorage.removeItem(storageKey);
       else localStorage.setItem(storageKey, JSON.stringify(value));
@@ -152,7 +152,7 @@ export function usePlannerState() {
     state.preferMixedTeams,
     state.isConfirmed,
     state.loadedPlanId,
-    state.isLiveSession,
+    state.isSharedSession,
   ]);
 
   const setField = <K extends keyof PlannerState>(key: K, value: PlannerState[K]) =>

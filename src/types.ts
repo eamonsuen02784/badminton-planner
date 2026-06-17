@@ -104,7 +104,7 @@ export interface PlannerState {
   shareIsUpdate: boolean;
   shareId: string | null;
   shareToken: string | null;
-  isLiveSession: boolean;
+  isSharedSession: boolean;
   preferMixedTeams: boolean;
   isConfirmed: boolean;
   pendingOverwrite: 'generate' | 'clear' | 'import' | 'regenerateRemaining' | null;
