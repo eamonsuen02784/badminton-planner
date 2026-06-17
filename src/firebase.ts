@@ -1,4 +1,5 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import {
   getDatabase,
   ref,
@@ -12,9 +13,9 @@ import {
 declare global {
   interface Window {
     FIREBASE_CONFIG: Record<string, string> | null;
+    RECAPTCHA_SITE_KEY: string | null;
     ADMIN_PIN: string | null;
     SHARE_API_BASE: string | null;
-    DB: unknown;
   }
 }
 
@@ -25,6 +26,12 @@ function getDb(): Database | null {
   if (db) return db;
   if (!window.FIREBASE_CONFIG) return null;
   app = initializeApp(window.FIREBASE_CONFIG);
+  if (window.RECAPTCHA_SITE_KEY) {
+    initializeAppCheck(app, {
+      provider: new ReCaptchaV3Provider(window.RECAPTCHA_SITE_KEY),
+      isTokenAutoRefreshEnabled: true,
+    });
+  }
   db = getDatabase(app);
   return db;
 }
