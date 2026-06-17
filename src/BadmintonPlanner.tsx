@@ -5,6 +5,7 @@ import { ARCHIVE_TTL_MS, C, DEFAULT_PLAYERS, FONT } from './constants';
 import { usePlannerState } from './hooks/usePlannerState';
 import PlayerList from './components/PlayerList';
 import ScheduleGrid from './components/ScheduleGrid';
+import AboutTab from './components/AboutTab';
 import {
   ArchiveTab,
   ConfirmOverwriteModal,
@@ -793,7 +794,7 @@ function BadmintonPlanner() {
         </div>
 
         <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-          {[['schedule', 'Schedule'], ['archive', `Saved Plans${savedPlans.length ? ` (${savedPlans.length})` : ''}`]].map(([val, label]) => (
+          {[['schedule', 'Schedule'], ['archive', `Saved Plans${savedPlans.length ? ` (${savedPlans.length})` : ''}`], ['about', 'How It Works']].map(([val, label]) => (
             <button key={val} onClick={() => patchState({ activeTab: val })}
               style={{
                 flex: 1, background: activeTab === val ? C.accentDim : C.card, color: activeTab === val ? '#fff' : C.textDim,
@@ -808,6 +809,8 @@ function BadmintonPlanner() {
         {activeTab === 'archive' && (
           <ArchiveTab savedPlans={savedPlans} loadPlan={loadPlan} deletePlan={deletePlan} />
         )}
+
+        {activeTab === 'about' && <AboutTab />}
 
         {activeTab === 'schedule' && (
         <>
