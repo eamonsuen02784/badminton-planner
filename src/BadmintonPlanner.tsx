@@ -266,12 +266,20 @@ function BadmintonPlanner() {
     });
   }, [genderInput, nameInput, players, totalSlots]);
 
-  const addPlayerFromHistory = useCallback((name, gender) => {
-    if (players.find(p => p.name.toLowerCase() === name.toLowerCase())) return;
+  const addSelectedFromBank = useCallback((entries) => {
+    const existing = new Set(players.map(p => p.name.toLowerCase()));
+    const toAdd = entries.filter(e => !existing.has(e.name.toLowerCase()));
+    if (toAdd.length === 0) return;
     patchState({
-      players: [...players, { name, gender, skill: 2, availFrom: 0, availTo: totalSlots - 1, group: 'full', leavesAt: null }],
+      players: [...players, ...toAdd.map(e => ({ name: e.name, gender: e.gender, skill: 2, availFrom: 0, availTo: totalSlots - 1, group: 'full', leavesAt: null }))],
     });
   }, [players, totalSlots]);
+
+  const addToBank = useCallback((name, gender) => {
+    const trimmed = name.trim();
+    if (!trimmed || playerHistory.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) return;
+    patchState({ playerHistory: [...playerHistory, { name: trimmed, gender }] });
+  }, [playerHistory]);
 
   const removeFromHistory = useCallback((name) => {
     patchState({ playerHistory: playerHistory.filter(p => p.name.toLowerCase() !== name.toLowerCase()) });
@@ -822,7 +830,8 @@ function BadmintonPlanner() {
           setNameInput={value => setField('nameInput', value)}
           setGenderInput={value => setField('genderInput', value)}
           addPlayer={addPlayer}
-          addPlayerFromHistory={addPlayerFromHistory}
+          addSelectedFromBank={addSelectedFromBank}
+          addToBank={addToBank}
           removeFromHistory={removeFromHistory}
           loadDefaults={loadDefaults}
           resetPlayers={resetPlayers}

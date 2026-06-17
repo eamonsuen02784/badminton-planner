@@ -32,7 +32,8 @@ export default function PlayerList({
   setNameInput,
   setGenderInput,
   addPlayer,
-  addPlayerFromHistory,
+  addSelectedFromBank,
+  addToBank,
   removeFromHistory,
   loadDefaults,
   resetPlayers,
@@ -42,8 +43,31 @@ export default function PlayerList({
   removePlayer,
 }) {
   const [editingNameIdx, setEditingNameIdx] = useState(null);
+  const [selectedBank, setSelectedBank] = useState(() => new Set());
+  const [bankNameInput, setBankNameInput] = useState('');
+  const [bankGenderInput, setBankGenderInput] = useState('M');
   const currentNames = new Set(players.map(p => p.name.toLowerCase()));
-  const pastPlayers = (playerHistory || []).filter(p => !currentNames.has(p.name.toLowerCase()));
+  const bankPlayers = (playerHistory || []).filter(p => !currentNames.has(p.name.toLowerCase()));
+
+  const toggleSelected = (name) => {
+    setSelectedBank(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  const addSelected = () => {
+    addSelectedFromBank(bankPlayers.filter(p => selectedBank.has(p.name)));
+    setSelectedBank(new Set());
+  };
+
+  const addToBankFromForm = () => {
+    if (!bankNameInput.trim()) return;
+    addToBank(bankNameInput, bankGenderInput);
+    setBankNameInput('');
+  };
   return (
     <>
       {players.length === 0 && (
@@ -107,32 +131,74 @@ export default function PlayerList({
         </button>
       </div>
 
-      {pastPlayers.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-          {pastPlayers.map(p => (
-            <button
-              key={p.name}
-              onClick={() => addPlayerFromHistory(p.name, p.gender)}
-              title={`Add ${p.name}`}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                background: C.card, color: p.gender === 'F' ? C.pink : C.accent,
-                border: `1px dashed ${C.border}`, borderRadius: 14,
-                padding: '4px 10px', fontSize: 12, fontWeight: 600, fontFamily: FONT,
-              }}
-            >
-              + {p.name}
-              <span
-                onClick={e => { e.stopPropagation(); removeFromHistory(p.name); }}
-                title="Remove from history"
-                style={{ color: C.textMuted, fontSize: 13, lineHeight: 1 }}
-              >
-                ×
-              </span>
+      <div style={{ marginBottom: 12 }}>
+          <p style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Player bank</p>
+
+          {bankPlayers.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+              {bankPlayers.map(p => {
+                const isSelected = selectedBank.has(p.name);
+                return (
+                  <button
+                    key={p.name}
+                    onClick={() => toggleSelected(p.name)}
+                    title={isSelected ? `Deselect ${p.name}` : `Select ${p.name}`}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      background: isSelected ? (p.gender === 'F' ? C.pinkDim : C.accentDim) : C.card,
+                      color: isSelected ? '#fff' : p.gender === 'F' ? C.pink : C.accent,
+                      border: `1px ${isSelected ? 'solid' : 'dashed'} ${isSelected ? 'transparent' : C.border}`,
+                      borderRadius: 14, padding: '4px 10px', fontSize: 12, fontWeight: 600, fontFamily: FONT,
+                    }}
+                  >
+                    {isSelected ? '✓' : '+'} {p.name}
+                    <span
+                      onClick={e => { e.stopPropagation(); removeFromHistory(p.name); setSelectedBank(prev => { const n = new Set(prev); n.delete(p.name); return n; }); }}
+                      title="Remove from bank"
+                      style={{ color: isSelected ? 'rgba(255,255,255,0.7)' : C.textMuted, fontSize: 13, lineHeight: 1 }}
+                    >
+                      ×
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input
+              value={bankNameInput}
+              onChange={e => setBankNameInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addToBankFromForm()}
+              placeholder="Add to bank (not today's roster)"
+              style={{ flex: 1, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 10px', color: C.text, fontSize: 12, fontFamily: FONT, outline: 'none' }}
+            />
+            <div style={{ display: 'flex', borderRadius: 6, overflow: 'hidden', border: `1px solid ${C.border}`, flexShrink: 0 }}>
+              {['M', 'F'].map(g => (
+                <button
+                  key={g}
+                  onClick={() => setBankGenderInput(g)}
+                  style={{
+                    background: bankGenderInput === g ? (g === 'M' ? C.accentDim : C.pinkDim) : C.card,
+                    color: bankGenderInput === g ? '#fff' : g === 'M' ? C.accent : C.pink,
+                    border: 'none', padding: '6px 10px', fontSize: 13, fontWeight: 700, fontFamily: FONT,
+                    opacity: bankGenderInput === g ? 1 : 0.6,
+                  }}
+                >
+                  {g === 'M' ? '♂' : '♀'}
+                </button>
+              ))}
+            </div>
+            <button onClick={addToBankFromForm} style={{ background: C.card, color: C.textDim, border: `1px dashed ${C.border}`, borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, fontFamily: FONT }}>
+              + Bank
             </button>
-          ))}
+            {selectedBank.size > 0 && (
+              <button onClick={addSelected} style={{ background: C.accent, color: C.bg, border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, fontFamily: FONT }}>
+                Add Selected ({selectedBank.size})
+              </button>
+            )}
+          </div>
         </div>
-      )}
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         {!allDefaultsLoaded && (
