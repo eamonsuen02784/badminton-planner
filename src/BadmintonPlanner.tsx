@@ -99,6 +99,7 @@ function BadmintonPlanner() {
     shareIsUpdate,
     shareId,
     shareToken,
+    isLiveSession,
     preferMixedTeams,
     isConfirmed,
     pendingOverwrite,
@@ -169,7 +170,7 @@ function BadmintonPlanner() {
     const urlShareId = params.get('share');
 
     if (urlShareId && isFirebaseConfigured()) {
-      patchState({ shareId: urlShareId });
+      patchState({ shareId: urlShareId, isLiveSession: true });
       window.history.replaceState(null, '', window.location.pathname);
       return;
     }
@@ -206,7 +207,7 @@ function BadmintonPlanner() {
   const isApplyingRemoteRef = useRef(false);
 
   useEffect(() => {
-    if (!shareId || !isFirebaseConfigured()) return;
+    if (!isLiveSession || !shareId || !isFirebaseConfigured()) return;
     const unsubscribe = subscribeToShare(shareId, data => {
       if (data?.v === 1 && data.p && data.slots) {
         isApplyingRemoteRef.current = true;
@@ -215,7 +216,7 @@ function BadmintonPlanner() {
       }
     });
     return unsubscribe;
-  }, [shareId]);
+  }, [isLiveSession, shareId]);
 
   const slotTime = useCallback((slotIdx) => {
     const startMin = (slotIdx - 1) * gameMinutes;
@@ -288,14 +289,14 @@ function BadmintonPlanner() {
   }, [gameMinutes, getPlayersWithAvailability, isConfirmed, numCourts, result, scores]);
 
   useEffect(() => {
-    if (!shareId || !isFirebaseConfigured() || !result) return;
+    if (!isLiveSession || !shareId || !isFirebaseConfigured() || !result) return;
     if (isApplyingRemoteRef.current) return;
     const t = setTimeout(() => {
       const payload = buildSharePayload();
       if (payload) updateShare(shareId, payload);
     }, 600);
     return () => clearTimeout(t);
-  }, [shareId, buildSharePayload]);
+  }, [isLiveSession, shareId, buildSharePayload]);
 
   const computeSkill = useCallback((name) => {
     const wl = winLoss[name];
@@ -415,7 +416,7 @@ function BadmintonPlanner() {
       patchState({ importError: 'Could not parse schedule — paste the full copied text.' });
       return;
     }
-    patchState({ result: parsed, scores: {}, showImport: false, importText: '', importError: '', isConfirmed: false, loadedPlanId: null, shareId: null, shareToken: null });
+    patchState({ result: parsed, scores: {}, showImport: false, importText: '', importError: '', isConfirmed: false, loadedPlanId: null, shareId: null, shareToken: null, isLiveSession: false });
   }, [importText, parseScheduleText]);
 
   const importSchedule = useCallback(() => {
@@ -428,7 +429,7 @@ function BadmintonPlanner() {
 
   const runGenerate = useCallback(() => {
     if (players.length < 4 || isGenerating) return;
-    patchState({ isGenerating: true, result: null, scores: {}, copied: false, genSlot: 0, isConfirmed: false, loadedPlanId: null, shareId: null, shareToken: null });
+    patchState({ isGenerating: true, result: null, scores: {}, copied: false, genSlot: 0, isConfirmed: false, loadedPlanId: null, shareId: null, shareToken: null, isLiveSession: false });
     const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
     const gen = generateScheduleGen(playersWithSkill, totalSlots, getCourtsPerSlot(), 0, null, null, { preferMixedTeams });
     let lastValue = null;
@@ -482,7 +483,7 @@ function BadmintonPlanner() {
   }, [isConfirmed, players.length, result, runRegenerateRemaining]);
 
   const runClearSchedule = useCallback(() => {
-    patchState({ result: null, scores: {}, fromSlot: 1, isConfirmed: false, loadedPlanId: null, shareId: null, shareToken: null });
+    patchState({ result: null, scores: {}, fromSlot: 1, isConfirmed: false, loadedPlanId: null, shareId: null, shareToken: null, isLiveSession: false });
   }, []);
 
   const clearSchedule = useCallback(() => {
@@ -669,18 +670,26 @@ function BadmintonPlanner() {
     link.click();
   }, []);
 
-  const savePlan = useCallback((overwrite) => {
+  const savePlan = useCallback((mode) => {
     if (!result || !saveTag.trim()) return;
-    if (overwrite && loadedPlanId != null && savedPlans.some(p => p.id === loadedPlanId)) {
+    const trimmedTag = saveTag.trim();
+    const targetId = mode === 'new'
+      ? null
+      : mode === 'update' && loadedPlanId != null && savedPlans.some(p => p.id === loadedPlanId)
+      ? loadedPlanId
+      : savedPlans.find(p => p.tag.trim().toLowerCase() === trimmedTag.toLowerCase())?.id ?? null;
+
+    if (targetId != null) {
       patchState({
-        savedPlans: savedPlans.map(p => p.id === loadedPlanId ? { ...p, tag: saveTag.trim(), result, savedAt: new Date().toISOString() } : p),
+        savedPlans: savedPlans.map(p => p.id === targetId ? { ...p, tag: trimmedTag, result, savedAt: new Date().toISOString() } : p),
         showSavePlan: false,
         saveTag: '',
+        loadedPlanId: targetId,
       });
     } else {
       const newId = Date.now();
       patchState({
-        savedPlans: [{ id: newId, tag: saveTag.trim(), result, savedAt: new Date().toISOString() }, ...savedPlans],
+        savedPlans: [{ id: newId, tag: trimmedTag, result, savedAt: new Date().toISOString() }, ...savedPlans],
         showSavePlan: false,
         saveTag: '',
         loadedPlanId: newId,
@@ -689,7 +698,7 @@ function BadmintonPlanner() {
   }, [loadedPlanId, result, saveTag, savedPlans]);
 
   const loadPlan = useCallback((plan) => {
-    patchState({ result: plan.result, scores: {}, activeTab: 'schedule', isConfirmed: false, loadedPlanId: plan.id, shareId: null, shareToken: null });
+    patchState({ result: plan.result, scores: {}, activeTab: 'schedule', isConfirmed: false, loadedPlanId: plan.id, shareId: null, shareToken: null, isLiveSession: false });
   }, []);
 
   const deletePlan = useCallback((id) => {
@@ -708,7 +717,7 @@ function BadmintonPlanner() {
       const id = existingId || createShare(data);
       if (existingId) updateShare(existingId, data);
       if (id) {
-        patchState({ shareId: id, shareToken: null });
+        patchState({ shareId: id, shareToken: null, isLiveSession: true });
         const url = `${window.location.origin}${window.location.pathname}?share=${encodeURIComponent(id)}`;
         copyText(url, () => {
           patchState({ sharedUrl: url, copiedShareUrl: true, showShareModal: true, shareIsUpdate: !!existingId });
@@ -832,7 +841,7 @@ function BadmintonPlanner() {
     <div style={{ background: C.bg, minHeight: '100vh', color: C.text, fontFamily: FONT, padding: '24px 16px' }}>
       <div style={{ maxWidth: 780, margin: '0 auto' }}>
         {showPinPrompt && <PinPromptModal pinInput={pinInput} pinError={pinError} setPinInput={value => patchState({ pinInput: value, pinError: false })} submitPin={submitPin} close={() => patchState({ showPinPrompt: false, pinInput: '', pinError: false })} />}
-        {showSavePlan && <SavePlanModal needsPin={window.ADMIN_PIN && !isAdmin} pinInput={pinInput} pinError={pinError} setPinInput={value => patchState({ pinInput: value, pinError: false })} submitPin={submitPin} saveTag={saveTag} setSaveTag={value => patchState({ saveTag: value })} savePlan={savePlan} canUpdate={loadedPlanId != null && savedPlans.some(p => p.id === loadedPlanId)} close={() => patchState({ showSavePlan: false, pinInput: '', pinError: false })} />}
+        {showSavePlan && <SavePlanModal needsPin={window.ADMIN_PIN && !isAdmin} pinInput={pinInput} pinError={pinError} setPinInput={value => patchState({ pinInput: value, pinError: false })} submitPin={submitPin} saveTag={saveTag} setSaveTag={value => patchState({ saveTag: value })} savePlan={savePlan} canUpdate={loadedPlanId != null && savedPlans.some(p => p.id === loadedPlanId)} savedPlans={savedPlans} close={() => patchState({ showSavePlan: false, pinInput: '', pinError: false })} />}
         {showShareModal && <ShareLinkModal copiedShareUrl={copiedShareUrl} sharedUrl={sharedUrl} shareIsUpdate={shareIsUpdate} hasExisting={isFirebaseConfigured() ? !!shareId : !!(shareId && shareToken)} live={isFirebaseConfigured()} copyShareUrl={copyShareUrl} newShareLink={() => shareLink(true)} close={() => patchState({ showShareModal: false })} />}
         {showImport && <ImportModal importText={importText} importError={importError} setImportText={value => patchState({ importText: value, importError: '' })} importSchedule={importSchedule} close={() => patchState({ showImport: false, importText: '', importError: '' })} />}
 

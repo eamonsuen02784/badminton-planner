@@ -15,8 +15,6 @@ const STORAGE_KEYS = {
   scores: 'bp-scores',
   winLoss: 'bp-winloss',
   savedPlans: 'bp-saved-plans',
-  shareId: 'bp-share-id',
-  shareToken: 'bp-share-token',
   preferMixedTeams: 'bp-prefer-mixed-teams',
   isConfirmed: 'bp-is-confirmed',
   loadedPlanId: 'bp-loaded-plan-id',
@@ -32,6 +30,14 @@ function loadState<T>(key: string, fallback: T): T {
 }
 
 function createInitialState(): PlannerState {
+  // bp-share-id/bp-share-token used to be persisted across visits, which caused a stale
+  // share to silently reconnect (and overwrite local state) on a plain, non-share app open.
+  // Clean up any leftovers from before this was fixed.
+  try {
+    localStorage.removeItem('bp-share-id');
+    localStorage.removeItem('bp-share-token');
+  } catch {}
+
   return {
     players: loadState(STORAGE_KEYS.players, []),
     playerHistory: loadState(STORAGE_KEYS.playerHistory, []),
@@ -71,8 +77,9 @@ function createInitialState(): PlannerState {
     sharedUrl: '',
     copiedShareUrl: false,
     shareIsUpdate: false,
-    shareId: loadState(STORAGE_KEYS.shareId, null),
-    shareToken: loadState(STORAGE_KEYS.shareToken, null),
+    shareId: null,
+    shareToken: null,
+    isLiveSession: false,
     preferMixedTeams: loadState(STORAGE_KEYS.preferMixedTeams, false),
     isConfirmed: loadState(STORAGE_KEYS.isConfirmed, false),
     pendingOverwrite: null,
@@ -112,8 +119,6 @@ export function usePlannerState() {
       scores: state.scores,
       winLoss: state.winLoss,
       savedPlans: state.savedPlans,
-      shareId: state.shareId,
-      shareToken: state.shareToken,
       preferMixedTeams: state.preferMixedTeams,
       isConfirmed: state.isConfirmed,
       loadedPlanId: state.loadedPlanId,
@@ -137,8 +142,6 @@ export function usePlannerState() {
     state.scores,
     state.winLoss,
     state.savedPlans,
-    state.shareId,
-    state.shareToken,
     state.preferMixedTeams,
     state.isConfirmed,
     state.loadedPlanId,

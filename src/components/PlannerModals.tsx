@@ -48,7 +48,9 @@ export function ConfirmOverwriteModal({ onConfirm, onCancel }) {
   );
 }
 
-export function SavePlanModal({ needsPin, pinInput, pinError, setPinInput, submitPin, saveTag, setSaveTag, savePlan, canUpdate, close }) {
+export function SavePlanModal({ needsPin, pinInput, pinError, setPinInput, submitPin, saveTag, setSaveTag, savePlan, canUpdate, savedPlans, close }) {
+  const trimmedTag = saveTag.trim().toLowerCase();
+  const duplicateTag = !canUpdate && trimmedTag && (savedPlans || []).some(p => p.tag.trim().toLowerCase() === trimmedTag);
   return (
     <ModalShell>
       {needsPin ? (
@@ -66,13 +68,18 @@ export function SavePlanModal({ needsPin, pinInput, pinError, setPinInput, submi
         <>
           <p style={{ fontWeight: 700, marginBottom: 4 }}>{canUpdate ? 'Update saved plan' : 'Save this plan'}</p>
           {canUpdate && <p style={{ fontSize: 12, color: C.textDim, marginBottom: 8 }}>This will overwrite the saved plan you loaded, or save as a new copy below.</p>}
-          <input autoFocus value={saveTag} onChange={e => setSaveTag(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') savePlan(canUpdate); if (e.key === 'Escape') close(); }} placeholder="e.g. Wed 30/4 · 8 players" style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px', color: C.text, fontSize: 14, fontFamily: FONT, boxSizing: 'border-box', marginTop: canUpdate ? 0 : 12 }} />
+          <input autoFocus value={saveTag} onChange={e => setSaveTag(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') savePlan(canUpdate ? 'update' : undefined); if (e.key === 'Escape') close(); }} placeholder="e.g. Wed 30/4 · 8 players" style={{ width: '100%', background: C.bg, border: `1px solid ${duplicateTag ? C.amber : C.border}`, borderRadius: 6, padding: '10px', color: C.text, fontSize: 14, fontFamily: FONT, boxSizing: 'border-box', marginTop: canUpdate ? 0 : 12 }} />
+          {duplicateTag && (
+            <p style={{ fontSize: 11, color: C.amber, marginTop: 6 }}>
+              A saved plan named "{saveTag.trim()}" already exists — saving will update it instead of creating a duplicate.
+            </p>
+          )}
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button onClick={() => savePlan(canUpdate)} disabled={!saveTag.trim()} style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '10px', fontWeight: 700, fontFamily: FONT, opacity: saveTag.trim() ? 1 : 0.4 }}>{canUpdate ? 'Update' : 'Save'}</button>
+            <button onClick={() => savePlan(canUpdate ? 'update' : undefined)} disabled={!saveTag.trim()} style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '10px', fontWeight: 700, fontFamily: FONT, opacity: saveTag.trim() ? 1 : 0.4 }}>{canUpdate ? 'Update' : 'Save'}</button>
             <button onClick={close} style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px 16px', fontFamily: FONT }}>Cancel</button>
           </div>
           {canUpdate && (
-            <button onClick={() => savePlan(false)} disabled={!saveTag.trim()} style={{ marginTop: 8, width: '100%', background: 'transparent', color: C.textMuted, border: `1px dashed ${C.border}`, borderRadius: 6, padding: '7px', fontFamily: FONT, fontSize: 12, opacity: saveTag.trim() ? 1 : 0.4 }}>
+            <button onClick={() => savePlan('new')} disabled={!saveTag.trim()} style={{ marginTop: 8, width: '100%', background: 'transparent', color: C.textMuted, border: `1px dashed ${C.border}`, borderRadius: 6, padding: '7px', fontFamily: FONT, fontSize: 12, opacity: saveTag.trim() ? 1 : 0.4 }}>
             Save as a new copy instead
             </button>
           )}

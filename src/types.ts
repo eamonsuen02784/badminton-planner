@@ -104,6 +104,7 @@ export interface PlannerState {
   shareIsUpdate: boolean;
   shareId: string | null;
   shareToken: string | null;
+  isLiveSession: boolean;
   preferMixedTeams: boolean;
   isConfirmed: boolean;
   pendingOverwrite: 'generate' | 'clear' | 'import' | 'regenerateRemaining' | null;
@@ -123,8 +124,6 @@ export interface PlannerPersistedState {
   scores: ScoresMap;
   winLoss: WinLossMap;
   savedPlans: SavedPlan[];
-  shareId: string | null;
-  shareToken: string | null;
   isConfirmed: boolean;
   preferMixedTeams: boolean;
   loadedPlanId: number | null;
