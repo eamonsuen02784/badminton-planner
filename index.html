@@ -518,6 +518,7 @@
 
     function BadmintonPlanner() {
       const [players, setPlayers] = useState(() => loadState("bp-players", []));
+      const [playerHistory, setPlayerHistory] = useState(() => loadState("bp-player-history", []));
       const [nameInput, setNameInput] = useState("");
       const [genderInput, setGenderInput] = useState("M");
       const [editingNameIdx, setEditingNameIdx] = useState(null);
@@ -596,6 +597,14 @@
         }
       }, [winLoss, isAdmin]);
       useEffect(() => { localStorage.setItem("bp-players", JSON.stringify(players)); }, [players]);
+      useEffect(() => { localStorage.setItem("bp-player-history", JSON.stringify(playerHistory)); }, [playerHistory]);
+      useEffect(() => {
+        if (players.length === 0) return;
+        const known = new Set(playerHistory.map((p) => p.name.toLowerCase()));
+        const newOnes = players.filter((p) => !known.has(p.name.toLowerCase()));
+        if (newOnes.length === 0) return;
+        setPlayerHistory((prev) => [...prev, ...newOnes.map((p) => ({ name: p.name, gender: p.gender }))]);
+      }, [players]);
       useEffect(() => { localStorage.setItem("bp-totalMinutes", JSON.stringify(totalMinutes)); }, [totalMinutes]);
       useEffect(() => { localStorage.setItem("bp-gameMinutes", JSON.stringify(gameMinutes)); }, [gameMinutes]);
       useEffect(() => { localStorage.setItem("bp-numCourts", JSON.stringify(numCourts)); }, [numCourts]);
@@ -836,6 +845,15 @@
         setPlayers((prev) => [...prev, { name, gender: genderInput, skill: 2, availFrom: 0, availTo: totalSlots - 1, group: "full", leavesAt: null }]);
         setNameInput("");
       }, [nameInput, genderInput, players, totalSlots]);
+
+      const addPlayerFromHistory = useCallback((name, gender) => {
+        if (players.find((p) => p.name.toLowerCase() === name.toLowerCase())) return;
+        setPlayers((prev) => [...prev, { name, gender, skill: 2, availFrom: 0, availTo: totalSlots - 1, group: "full", leavesAt: null }]);
+      }, [players, totalSlots]);
+
+      const removeFromHistory = useCallback((name) => {
+        setPlayerHistory((prev) => prev.filter((p) => p.name.toLowerCase() !== name.toLowerCase()));
+      }, []);
 
       const removePlayer = useCallback((idx) => {
         setPlayers((prev) => prev.filter((_, i) => i !== idx));
@@ -1094,6 +1112,8 @@
         players.some((p) => p.name.toLowerCase() === dp.name.toLowerCase())
       );
       const hasAppliedScores = result && Object.values(scores).some(s => s.applied);
+      const currentNames = new Set(players.map((p) => p.name.toLowerCase()));
+      const pastPlayers = playerHistory.filter((p) => !currentNames.has(p.name.toLowerCase()));
 
       // Format a slot's time range — absolute if sessionStart is set, relative otherwise
       const slotTime = (slotIdx) => {
@@ -1385,6 +1405,12 @@
               </div>
             )}
 
+            {players.length > 0 && (
+              <p style={{ fontSize: 12, color: C.textDim, marginBottom: 8 }}>
+                {players.length} player{players.length === 1 ? "" : "s"}
+              </p>
+            )}
+
             {/* Player Input */}
             <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
               <input value={nameInput} onChange={(e) => setNameInput(e.target.value)}
@@ -1406,6 +1432,27 @@
                 ADD
               </button>
             </div>
+
+            {/* Past players */}
+            {pastPlayers.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                {pastPlayers.map((p) => (
+                  <button key={p.name} onClick={() => addPlayerFromHistory(p.name, p.gender)}
+                    title={`Add ${p.name}`}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 6,
+                      background: C.card, color: p.gender === "F" ? C.pink : C.accent,
+                      border: `1px dashed ${C.border}`, borderRadius: 14,
+                      padding: "4px 10px", fontSize: 12, fontWeight: 600, fontFamily: font,
+                    }}>
+                    + {p.name}
+                    <span onClick={(e) => { e.stopPropagation(); removeFromHistory(p.name); }}
+                      title="Remove from history"
+                      style={{ color: C.textMuted, fontSize: 13, lineHeight: 1 }}>×</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Load / Reset / Clear */}
             <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>

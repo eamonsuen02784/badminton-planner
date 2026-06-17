@@ -12,7 +12,6 @@ import {
   SavedPlansList,
   SavePlanModal,
   ShareLinkModal,
-  ShareLoadModal,
 } from './components/PlannerModals';
 
 function normalizeApiBase(base) {
@@ -51,6 +50,7 @@ function BadmintonPlanner() {
 
   const {
     players,
+    playerHistory,
     nameInput,
     genderInput,
     totalMinutes,
@@ -97,6 +97,16 @@ function BadmintonPlanner() {
   const maxGames = result ? Math.max(...result.gamesPlayed) : 0;
   const hasAppliedScores = result && Object.values(scores).some(s => s.applied);
   const allDefaultsLoaded = DEFAULT_PLAYERS.every(dp => players.some(p => p.name.toLowerCase() === dp.name.toLowerCase()));
+
+  useEffect(() => {
+    if (players.length === 0) return;
+    const known = new Set(playerHistory.map(p => p.name.toLowerCase()));
+    const newOnes = players.filter(p => !known.has(p.name.toLowerCase()));
+    if (newOnes.length === 0) return;
+    patchState({
+      playerHistory: [...playerHistory, ...newOnes.map(p => ({ name: p.name, gender: p.gender }))],
+    });
+  }, [players]);
 
   useEffect(() => {
     if (!window.DB) return;
@@ -148,7 +158,7 @@ function BadmintonPlanner() {
         .then(payload => {
           const data = payload?.data;
           if (data?.v === 1 && data.p && data.slots) {
-            patchState({ pendingShare: data, showShareLoad: true });
+            applySharePayload(data);
             window.history.replaceState(null, '', window.location.pathname);
           }
         })
@@ -161,7 +171,7 @@ function BadmintonPlanner() {
     try {
       const data = JSON.parse(atob(hash.slice(7)));
       if (data.v === 1 && data.p && data.slots) {
-        patchState({ pendingShare: data, showShareLoad: true });
+        applySharePayload(data);
         window.history.replaceState(null, '', window.location.pathname);
       }
     } catch {}
@@ -249,6 +259,17 @@ function BadmintonPlanner() {
       nameInput: '',
     });
   }, [genderInput, nameInput, players, totalSlots]);
+
+  const addPlayerFromHistory = useCallback((name, gender) => {
+    if (players.find(p => p.name.toLowerCase() === name.toLowerCase())) return;
+    patchState({
+      players: [...players, { name, gender, skill: 2, availFrom: 0, availTo: totalSlots - 1, group: 'full', leavesAt: null }],
+    });
+  }, [players, totalSlots]);
+
+  const removeFromHistory = useCallback((name) => {
+    patchState({ playerHistory: playerHistory.filter(p => p.name.toLowerCase() !== name.toLowerCase()) });
+  }, [playerHistory]);
 
   const removePlayer = useCallback((idx) => {
     patchState({ players: players.filter((_, i) => i !== idx), result: null });
@@ -578,9 +599,8 @@ function BadmintonPlanner() {
     });
   }, [sharedUrl]);
 
-  const loadSharedSchedule = useCallback(() => {
-    if (!pendingShare) return;
-    const { p: sharedPlayers, cfg, slots, scores: sharedScores } = pendingShare;
+  const applySharePayload = useCallback((data: SharePayload) => {
+    const { p: sharedPlayers, cfg, slots, scores: sharedScores } = data;
     const n = sharedPlayers.length;
     const gp = new Array(n).fill(0);
     const cp = new Array(n).fill(0);
@@ -639,10 +659,8 @@ function BadmintonPlanner() {
       numCourts: cfg?.c || numCourts,
       result: { schedule: newSchedule, gamesPlayed: [...gp] },
       scores: restoredScores,
-      showShareLoad: false,
-      pendingShare: null,
     });
-  }, [gameMinutes, numCourts, pendingShare]);
+  }, [gameMinutes, numCourts]);
 
   return (
     <div style={{ background: C.bg, minHeight: '100vh', color: C.text, fontFamily: FONT, padding: '24px 16px' }}>
@@ -650,7 +668,6 @@ function BadmintonPlanner() {
         {showPinPrompt && <PinPromptModal pinInput={pinInput} pinError={pinError} setPinInput={value => patchState({ pinInput: value, pinError: false })} submitPin={submitPin} close={() => patchState({ showPinPrompt: false, pinInput: '', pinError: false })} />}
         {showSavePlan && <SavePlanModal needsPin={window.ADMIN_PIN && !isAdmin} pinInput={pinInput} pinError={pinError} setPinInput={value => patchState({ pinInput: value, pinError: false })} submitPin={submitPin} saveTag={saveTag} setSaveTag={value => patchState({ saveTag: value })} savePlan={savePlan} close={() => patchState({ showSavePlan: false, pinInput: '', pinError: false })} />}
         {showShareModal && <ShareLinkModal copiedShareUrl={copiedShareUrl} sharedUrl={sharedUrl} shareIsUpdate={shareIsUpdate} hasExisting={!!(shareId && shareToken)} copyShareUrl={copyShareUrl} newShareLink={() => shareLink(true)} close={() => patchState({ showShareModal: false })} />}
-        {showShareLoad && pendingShare && <ShareLoadModal pendingShare={pendingShare} loadSharedSchedule={loadSharedSchedule} dismiss={() => patchState({ showShareLoad: false, pendingShare: null })} />}
         {showImport && <ImportModal importText={importText} importError={importError} setImportText={value => patchState({ importText: value, importError: '' })} importSchedule={importSchedule} close={() => patchState({ showImport: false, importText: '', importError: '' })} />}
 
         <div style={{ marginBottom: 28, borderBottom: `1px solid ${C.border}`, paddingBottom: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
@@ -745,6 +762,7 @@ function BadmintonPlanner() {
 
         <PlayerList
           players={players}
+          playerHistory={playerHistory}
           winLoss={winLoss}
           staggerMode={staggerMode}
           totalSlots={totalSlots}
@@ -754,6 +772,8 @@ function BadmintonPlanner() {
           setNameInput={value => setField('nameInput', value)}
           setGenderInput={value => setField('genderInput', value)}
           addPlayer={addPlayer}
+          addPlayerFromHistory={addPlayerFromHistory}
+          removeFromHistory={removeFromHistory}
           loadDefaults={loadDefaults}
           resetPlayers={resetPlayers}
           clearPlayers={clearPlayers}

@@ -64,6 +64,7 @@ export interface SharePayload {
 
 export interface PlannerState {
   players: Player[];
+  playerHistory: Player[];
   nameInput: string;
   genderInput: 'M' | 'F';
   totalMinutes: number;
@@ -107,6 +108,7 @@ export interface PlannerState {
 
 export interface PlannerPersistedState {
   players: Player[];
+  playerHistory: Player[];
   totalMinutes: number;
   gameMinutes: number;
   numCourts: number;

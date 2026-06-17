@@ -22,6 +22,7 @@ function SkillDot({ name, winLoss }) {
 
 export default function PlayerList({
   players,
+  playerHistory,
   winLoss,
   staggerMode,
   totalSlots,
@@ -31,6 +32,8 @@ export default function PlayerList({
   setNameInput,
   setGenderInput,
   addPlayer,
+  addPlayerFromHistory,
+  removeFromHistory,
   loadDefaults,
   resetPlayers,
   clearPlayers,
@@ -39,6 +42,8 @@ export default function PlayerList({
   removePlayer,
 }) {
   const [editingNameIdx, setEditingNameIdx] = useState(null);
+  const currentNames = new Set(players.map(p => p.name.toLowerCase()));
+  const pastPlayers = (playerHistory || []).filter(p => !currentNames.has(p.name.toLowerCase()));
   return (
     <>
       {players.length === 0 && (
@@ -60,6 +65,12 @@ export default function PlayerList({
             ))}
           </div>
         </div>
+      )}
+
+      {players.length > 0 && (
+        <p style={{ fontSize: 12, color: C.textDim, marginBottom: 8 }}>
+          {players.length} player{players.length === 1 ? '' : 's'}
+        </p>
       )}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
@@ -95,6 +106,33 @@ export default function PlayerList({
           ADD
         </button>
       </div>
+
+      {pastPlayers.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+          {pastPlayers.map(p => (
+            <button
+              key={p.name}
+              onClick={() => addPlayerFromHistory(p.name, p.gender)}
+              title={`Add ${p.name}`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                background: C.card, color: p.gender === 'F' ? C.pink : C.accent,
+                border: `1px dashed ${C.border}`, borderRadius: 14,
+                padding: '4px 10px', fontSize: 12, fontWeight: 600, fontFamily: FONT,
+              }}
+            >
+              + {p.name}
+              <span
+                onClick={e => { e.stopPropagation(); removeFromHistory(p.name); }}
+                title="Remove from history"
+                style={{ color: C.textMuted, fontSize: 13, lineHeight: 1 }}
+              >
+                ×
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         {!allDefaultsLoaded && (

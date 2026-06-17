@@ -4,6 +4,7 @@ import type { PlannerPersistedState, PlannerState } from '../types';
 
 const STORAGE_KEYS = {
   players: 'bp-players',
+  playerHistory: 'bp-player-history',
   totalMinutes: 'bp-totalMinutes',
   gameMinutes: 'bp-gameMinutes',
   numCourts: 'bp-numCourts',
@@ -31,6 +32,7 @@ function loadState<T>(key: string, fallback: T): T {
 function createInitialState(): PlannerState {
   return {
     players: loadState(STORAGE_KEYS.players, []),
+    playerHistory: loadState(STORAGE_KEYS.playerHistory, []),
     nameInput: '',
     genderInput: 'M',
     totalMinutes: loadState(STORAGE_KEYS.totalMinutes, DEFAULT_TOTAL_MINUTES),
@@ -94,6 +96,7 @@ export function usePlannerState() {
   useEffect(() => {
     const persisted: PlannerPersistedState = {
       players: state.players,
+      playerHistory: state.playerHistory,
       totalMinutes: state.totalMinutes,
       gameMinutes: state.gameMinutes,
       numCourts: state.numCourts,
@@ -116,6 +119,7 @@ export function usePlannerState() {
     }
   }, [
     state.players,
+    state.playerHistory,
     state.totalMinutes,
     state.gameMinutes,
     state.numCourts,
