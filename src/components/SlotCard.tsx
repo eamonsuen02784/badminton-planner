@@ -32,7 +32,7 @@ export default function SlotCard({
   };
 
   return (
-    <div style={{ background: C.card, border: `1px solid ${editing ? C.amber : C.border}`, borderRadius: 10, padding: '14px 16px' }}>
+    <div style={{ background: C.card, border: `1px solid ${editing ? C.amber : C.border}`, borderRadius: 10, padding: '14px 16px', boxShadow: C.shadow }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <span style={{ fontSize: 13, color: C.textDim, fontWeight: 600 }}>SLOT {slot.slot}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -159,7 +159,7 @@ export default function SlotCard({
           <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: ps.playing ? (ps.gender === 'F' ? C.pink : C.accent) : C.textMuted }}>{ps.name}</span>
             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-              <span style={{ fontSize: 11, fontWeight: 600, background: ps.playing ? 'rgba(34,211,238,0.15)' : 'rgba(100,116,139,0.15)', color: ps.playing ? C.green : C.textMuted, padding: '2px 6px', borderRadius: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, background: ps.playing ? 'rgba(125,211,252,0.15)' : 'rgba(100,116,139,0.15)', color: ps.playing ? C.green : C.textMuted, padding: '2px 6px', borderRadius: 4 }}>
                 {ps.playing ? `ON ${ps.conPlayed}` : `OFF ${ps.conRested}`}
               </span>
               <span style={{ fontSize: 11, fontWeight: 600, color: C.text, background: 'rgba(226,232,240,0.1)', padding: '2px 6px', borderRadius: 4 }}>

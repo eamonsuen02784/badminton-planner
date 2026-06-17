@@ -793,7 +793,9 @@ function BadmintonPlanner() {
 
         {activeTab === 'schedule' && (
         <>
-        <div className="settings-row">
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20, boxShadow: C.shadow }}>
+        <h3 style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, margin: '0 0 14px' }}>Session</h3>
+        <div className="settings-row" style={{ marginBottom: 0 }}>
           <div style={{ flex: '0 0 auto' }}>
             <label style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Start time</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
@@ -865,6 +867,7 @@ function BadmintonPlanner() {
             </div>
           </div>
         </div>
+        </div>
 
         <PlayerList
           players={players}
@@ -892,7 +895,7 @@ function BadmintonPlanner() {
         {players.length >= 4 && (
           <div className="action-buttons">
             <button onClick={() => patchState({ showImport: true })} style={{ background: 'transparent', color: C.textDim, border: `1px dashed ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontFamily: FONT }}>Import</button>
-            <button className="generate-btn" onClick={generate} disabled={isGenerating} style={{ flex: 1, background: `linear-gradient(135deg, ${C.accentDim}, ${C.pinkDim})`, color: '#fff', border: 'none', borderRadius: 8, padding: '14px', fontSize: 14, fontWeight: 700, fontFamily: FONT, letterSpacing: '1px', textTransform: 'uppercase', opacity: isGenerating ? 0.6 : 1 }}>
+            <button className="generate-btn" onClick={generate} disabled={isGenerating} style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 8, padding: '14px', fontSize: 14, fontWeight: 700, fontFamily: FONT, letterSpacing: '1px', textTransform: 'uppercase', opacity: isGenerating ? 0.6 : 1, boxShadow: C.shadow }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
                 <LucideIcon name="shuffle" size={15} />
                 {isGenerating ? `Slot ${genSlot} / ${totalSlots}…` : result ? 'Re-roll' : `Generate (${totalSlots} slots)`}

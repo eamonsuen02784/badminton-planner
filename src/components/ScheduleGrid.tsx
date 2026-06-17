@@ -26,7 +26,7 @@ export default function ScheduleGrid({
         <span style={{ fontSize: 18, fontWeight: 700 }}>🏸 Badminton Schedule</span>
       </div>
 
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, marginBottom: 20, boxShadow: C.shadow }}>
         <h3 style={{ fontSize: 13, color: C.textDim, textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 12px' }}>Games per Player</h3>
         <div className="stats-grid">
           {players.map((p, i) => {

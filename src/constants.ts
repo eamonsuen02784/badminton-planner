@@ -20,22 +20,23 @@ export const DEFAULT_PLAYERS: Player[] = [
 ];
 
 export const C = {
-  bg: '#0a0f1a',
-  card: '#111827',
-  border: '#1e293b',
-  accent: '#22d3ee',
-  accentDim: '#0e7490',
-  pink: '#f472b6',
-  pinkDim: '#9d174d',
-  text: '#e2e8f0',
-  textDim: '#64748b',
-  textMuted: '#475569',
+  bg: '#0b0e14',
+  card: '#12161f',
+  border: '#222836',
+  accent: '#7dd3fc',
+  accentDim: '#0369a1',
+  pink: '#fda4af',
+  pinkDim: '#9f1239',
+  text: '#e5e7eb',
+  textDim: '#8b95a7',
+  textMuted: '#5b6577',
   green: '#34d399',
   amber: '#fbbf24',
+  shadow: '0 1px 3px rgba(0,0,0,0.55)',
 };
 
-export const COURT_COLORS = ['#22d3ee', '#a78bfa', '#fb923c'];
-export const COURT_BG = ['rgba(34,211,238,0.08)', 'rgba(167,139,250,0.08)', 'rgba(251,146,60,0.08)'];
+export const COURT_COLORS = ['#7dd3fc', '#a78bfa', '#fb923c'];
+export const COURT_BG = ['rgba(125,211,252,0.07)', 'rgba(167,139,250,0.07)', 'rgba(251,146,60,0.07)'];
 export const FONT = "'Inter', system-ui, sans-serif";
 
 export const ICONS: Record<string, string[]> = {

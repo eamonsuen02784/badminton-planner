@@ -71,7 +71,7 @@ export default function PlayerList({
   return (
     <>
       {players.length === 0 && (
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '24px 20px', marginBottom: 20 }}>
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '24px 20px', marginBottom: 20, boxShadow: C.shadow }}>
           <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>How it works</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {[
@@ -80,7 +80,7 @@ export default function PlayerList({
               ['3', 'Generate & share', "Hit Generate to get a balanced schedule. Re-roll until you're happy, then copy it to your group chat."],
             ].map(([num, title, desc]) => (
               <div key={num} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, background: 'rgba(34,211,238,0.1)', borderRadius: '50%', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{num}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, background: 'rgba(125,211,252,0.1)', borderRadius: '50%', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{num}</span>
                 <div>
                   <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{title}</p>
                   <p style={{ fontSize: 12, color: C.textDim, lineHeight: 1.5 }}>{desc}</p>
@@ -226,7 +226,7 @@ export default function PlayerList({
       {players.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 20 }}>
           {players.map((p, i) => (
-            <div key={`${p.name}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px' }}>
+            <div key={`${p.name}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', boxShadow: C.shadow }}>
               {editingNameIdx === i ? (
                 <input autoFocus value={p.name}
                   onChange={e => updatePlayer(i, 'name', e.target.value)}
