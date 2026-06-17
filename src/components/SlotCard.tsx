@@ -10,6 +10,7 @@ export default function SlotCard({
   slotTime,
   startSlotEdit,
   applySlotEdit,
+  applySlotEditOnly,
   cancelSlotEdit,
   assignToPosition,
   updateScore,
@@ -38,8 +39,11 @@ export default function SlotCard({
           <span style={{ fontSize: 12, color: C.textMuted }}>{slotTime(slot.slot)}</span>
           {editing ? (
             <div style={{ display: 'flex', gap: 6 }}>
-              <button onClick={applySlotEdit} style={{ background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 13, fontWeight: 700, fontFamily: FONT, minHeight: 36 }}>
-                Apply
+              <button onClick={applySlotEditOnly} title="Swap players in this game only — every other slot stays exactly as already generated/shared" style={{ background: C.card, color: C.text, border: `1px solid ${C.accentDim}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, fontWeight: 700, fontFamily: FONT, minHeight: 36 }}>
+                This game only
+              </button>
+              <button onClick={applySlotEdit} title="Apply and regenerate every later slot for fairness" style={{ background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 13, fontWeight: 700, fontFamily: FONT, minHeight: 36 }}>
+                Apply &amp; regenerate after
               </button>
               <button onClick={cancelSlotEdit} style={{ background: C.card, color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, fontFamily: FONT, minHeight: 36 }}>
                 Cancel

@@ -448,6 +448,50 @@ export function generateSchedule(
   return result;
 }
 
+// Recomputes per-slot cumulative stats (gamesPlayed/streaks/playerState) from a schedule's
+// actual court/sitting assignments, without altering who plays in any slot. Used after a
+// manual single-slot edit so the tracker stays accurate without cascading a regeneration
+// into later slots.
+export function recomputeStats(schedule: SlotResult[], players: Player[]): GeneratorYield {
+  const n = players.length;
+  const gamesPlayed = new Array<number>(n).fill(0);
+  const consecutivePlayed = new Array<number>(n).fill(0);
+  const consecutiveRested = new Array<number>(n).fill(0);
+  const nameToIdx = new Map(players.map((p, i) => [p.name, i]));
+
+  const newSchedule = schedule.map(slot => {
+    const playingIdx = new Set(
+      slot.courts.flatMap(c => [...c.teamA, ...c.teamB]).map(p => nameToIdx.get(p.name)).filter(i => i !== undefined),
+    );
+    const availableIdx = new Set([
+      ...playingIdx,
+      ...slot.sitting.map(p => nameToIdx.get(p.name)).filter(i => i !== undefined),
+    ]);
+    for (let i = 0; i < n; i++) {
+      if (playingIdx.has(i)) {
+        gamesPlayed[i] = (gamesPlayed[i] ?? 0) + 1;
+        consecutivePlayed[i] = (consecutivePlayed[i] ?? 0) + 1;
+        consecutiveRested[i] = 0;
+      } else if (availableIdx.has(i)) {
+        consecutiveRested[i] = (consecutiveRested[i] ?? 0) + 1;
+        consecutivePlayed[i] = 0;
+      }
+    }
+    const playerState: PlayerState[] = players.map((p, i) => ({
+      name: p.name,
+      gender: p.gender,
+      total: gamesPlayed[i]!,
+      conPlayed: consecutivePlayed[i]!,
+      conRested: consecutiveRested[i]!,
+      playing: playingIdx.has(i),
+      available: availableIdx.has(i),
+    }));
+    return { ...slot, playerState };
+  });
+
+  return { schedule: newSchedule, gamesPlayed: [...gamesPlayed] };
+}
+
 export function extractState(keptSlots: SlotResult[], players: Player[]): ScheduleState {
   const n = players.length;
   const gamesPlayed = new Array<number>(n).fill(0);

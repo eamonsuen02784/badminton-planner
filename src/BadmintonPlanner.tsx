@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { generateSchedule, generateScheduleGen, extractState } from './algorithm/scheduler';
+import { generateSchedule, generateScheduleGen, extractState, recomputeStats } from './algorithm/scheduler';
 import { ARCHIVE_TTL_MS, C, DEFAULT_PLAYERS, FONT } from './constants';
 import { usePlannerState } from './hooks/usePlannerState';
 import PlayerList from './components/PlayerList';
@@ -445,6 +445,24 @@ function BadmintonPlanner() {
     patchState({ result: newResult, scores: nextScores, editingSlot: null, editLayout: null, copied: false });
   }, [computeSkill, editLayout, editingSlot, getCourtsPerSlot, getPlayersWithAvailability, result, scores, totalSlots]);
 
+  const applySlotEditOnly = useCallback(() => {
+    if (!editingSlot || !result || !editLayout) return;
+    const slotIdx = editingSlot - 1;
+    const nameToPlayer = new Map(players.map(p => [p.name, { name: p.name, gender: p.gender }]));
+    const origSlot = result.schedule[slotIdx];
+    const newCourts = editLayout.courts.map((court, ci) => ({
+      court: origSlot.courts[ci]?.court ?? ci + 1,
+      teamA: [nameToPlayer.get(court[0]), nameToPlayer.get(court[1])],
+      teamB: [nameToPlayer.get(court[2]), nameToPlayer.get(court[3])],
+    }));
+    const newSitting = editLayout.sitting.map(name => nameToPlayer.get(name));
+    const newScheduleRaw = result.schedule.map((slot, i) =>
+      i === slotIdx ? { ...slot, courts: newCourts, sitting: newSitting } : slot
+    );
+    const { schedule: newSchedule, gamesPlayed } = recomputeStats(newScheduleRaw, players);
+    patchState({ result: { schedule: newSchedule, gamesPlayed }, editingSlot: null, editLayout: null, copied: false });
+  }, [editingSlot, editLayout, players, result]);
+
   const updateScore = useCallback((slot, courtIdx, aVal, bVal, teamA, teamB) => {
     if (!isAdmin) return;
     const key = `s${slot}c${courtIdx}`;
@@ -865,6 +883,7 @@ function BadmintonPlanner() {
             slotTime={slotTime}
             startSlotEdit={startSlotEdit}
             applySlotEdit={applySlotEdit}
+            applySlotEditOnly={applySlotEditOnly}
             cancelSlotEdit={() => patchState({ editingSlot: null, editLayout: null })}
             assignToPosition={assignToPosition}
             updateScore={updateScore}

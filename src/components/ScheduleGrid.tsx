@@ -15,6 +15,7 @@ export default function ScheduleGrid({
   slotTime,
   startSlotEdit,
   applySlotEdit,
+  applySlotEditOnly,
   cancelSlotEdit,
   assignToPosition,
   updateScore,
@@ -62,6 +63,7 @@ export default function ScheduleGrid({
             slotTime={slotTime}
             startSlotEdit={startSlotEdit}
             applySlotEdit={applySlotEdit}
+            applySlotEditOnly={applySlotEditOnly}
             cancelSlotEdit={cancelSlotEdit}
             assignToPosition={assignToPosition}
             updateScore={updateScore}

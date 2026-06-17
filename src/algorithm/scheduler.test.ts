@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateSchedule, generateScheduleGen, extractState } from './scheduler.js';
+import { generateSchedule, generateScheduleGen, extractState, recomputeStats } from './scheduler.js';
 import type { Player, SlotResult } from './types.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -397,5 +397,47 @@ describe('slotResult repeatedCourts field', () => {
     expect(result).not.toBeNull();
     expect(result!.schedule[0]!.courts).toHaveLength(0);
     expect(result!.schedule[0]!.repeatedCourts).toEqual([]);
+  });
+});
+
+describe('recomputeStats — single-slot edit without cascading', () => {
+  it('leaves untouched slots identical and recomputes stats only from real assignments', () => {
+    const players = makePlayers(9, 4, 6);
+    const result = generateSchedule(players, 6, courtsPerSlot(2, 6), 0, null, null, {}, seededRng(42));
+    expect(result).not.toBeNull();
+    const original = result!.schedule;
+
+    // Manually swap two players between court and sitting in slot 1, leaving all other slots untouched.
+    const slot0 = original[0]!;
+    const sittingName = slot0.sitting[0]!.name;
+    const swappedOutName = slot0.courts[0]!.teamA[0].name;
+    const sittingPlayer = players.find(p => p.name === sittingName)!;
+    const swappedOutPlayer = players.find(p => p.name === swappedOutName)!;
+
+    const editedSchedule: SlotResult[] = original.map((slot, i) => {
+      if (i !== 0) return slot;
+      const newCourts = slot.courts.map((c, ci) =>
+        ci === 0
+          ? { ...c, teamA: [{ name: sittingPlayer.name, gender: sittingPlayer.gender }, c.teamA[1]] as [any, any] }
+          : c
+      );
+      const newSitting = slot.sitting.map(p => (p.name === sittingName ? { name: swappedOutPlayer.name, gender: swappedOutPlayer.gender } : p));
+      return { ...slot, courts: newCourts, sitting: newSitting };
+    });
+
+    const { schedule: recomputed, gamesPlayed } = recomputeStats(editedSchedule, players);
+
+    // Slots after the edited one keep their exact court/sitting assignments.
+    for (let i = 1; i < original.length; i++) {
+      expect(recomputed[i]!.courts).toEqual(original[i]!.courts);
+      expect(recomputed[i]!.sitting).toEqual(original[i]!.sitting);
+    }
+
+    // Final tally reflects the swap: the swapped-in player gained a game, the swapped-out player lost one,
+    // relative to the original schedule's final gamesPlayed.
+    const idxIn = players.findIndex(p => p.name === sittingName);
+    const idxOut = players.findIndex(p => p.name === swappedOutName);
+    expect(gamesPlayed[idxIn]).toBe(result!.gamesPlayed[idxIn] + 1);
+    expect(gamesPlayed[idxOut]).toBe(result!.gamesPlayed[idxOut] - 1);
   });
 });
