@@ -38,17 +38,7 @@ export default function SlotCard({
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 12, color: C.textMuted }}>{slotTime(slot.slot)}</span>
           {editing ? (
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button onClick={applySlotEditOnly} title="Swap players in this game only — every other slot stays exactly as already generated/shared" style={{ background: C.card, color: C.text, border: `1px solid ${C.accentDim}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, fontWeight: 700, fontFamily: FONT, minHeight: 36 }}>
-                This game only
-              </button>
-              <button onClick={applySlotEdit} title="Apply and regenerate every later slot for fairness" style={{ background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 13, fontWeight: 700, fontFamily: FONT, minHeight: 36 }}>
-                Apply &amp; regenerate after
-              </button>
-              <button onClick={cancelSlotEdit} style={{ background: C.card, color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 12px', fontSize: 13, fontFamily: FONT, minHeight: 36 }}>
-                Cancel
-              </button>
-            </div>
+            <span style={{ fontSize: 11, color: C.amber, fontWeight: 700, textTransform: 'uppercase' }}>Editing</span>
           ) : (
             <button onClick={() => startSlotEdit(slot.slot)} title="Edit who plays in this slot" style={{ background: 'none', border: 'none', color: C.textMuted, fontSize: 18, padding: '6px 10px', lineHeight: 1, cursor: 'pointer', minHeight: 36, minWidth: 36 }}>
               ✏️
@@ -87,6 +77,17 @@ export default function SlotCard({
                 ))}
               </div>
             )}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+              <button onClick={applySlotEditOnly} title="Swap players in this game only — every other slot stays exactly as already generated/shared" style={{ background: C.card, color: C.text, border: `1px solid ${C.accentDim}`, borderRadius: 6, padding: '6px 10px', fontSize: 11, fontWeight: 700, fontFamily: FONT, minHeight: 30 }}>
+                This game only
+              </button>
+              <button onClick={applySlotEdit} title="Apply and regenerate every later slot for fairness" style={{ background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 11, fontWeight: 700, fontFamily: FONT, minHeight: 30 }}>
+                Apply &amp; regenerate after
+              </button>
+              <button onClick={cancelSlotEdit} style={{ background: C.card, color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 11, fontFamily: FONT, minHeight: 30 }}>
+                Cancel
+              </button>
+            </div>
           </div>
         );
       })()}
