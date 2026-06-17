@@ -1,15 +1,15 @@
 // @ts-nocheck
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { generateSchedule, generateScheduleGen, extractState } from './algorithm/scheduler';
-import { C, DEFAULT_PLAYERS, FONT } from './constants';
+import { ARCHIVE_TTL_MS, C, DEFAULT_PLAYERS, FONT } from './constants';
 import { usePlannerState } from './hooks/usePlannerState';
 import PlayerList from './components/PlayerList';
 import ScheduleGrid from './components/ScheduleGrid';
 import {
+  ArchiveTab,
   ImportModal,
   LucideIcon,
   PinPromptModal,
-  SavedPlansList,
   SavePlanModal,
   ShareLinkModal,
 } from './components/PlannerModals';
@@ -78,7 +78,7 @@ function BadmintonPlanner() {
     savedPlans,
     showSavePlan,
     saveTag,
-    showSavedList,
+    activeTab,
     editingSlot,
     editLayout,
     pendingShare,
@@ -107,6 +107,12 @@ function BadmintonPlanner() {
       playerHistory: [...playerHistory, ...newOnes.map(p => ({ name: p.name, gender: p.gender }))],
     });
   }, [players]);
+
+  useEffect(() => {
+    const cutoff = Date.now() - ARCHIVE_TTL_MS;
+    const fresh = savedPlans.filter(p => new Date(p.savedAt).getTime() >= cutoff);
+    if (fresh.length !== savedPlans.length) patchState({ savedPlans: fresh });
+  }, [savedPlans]);
 
   useEffect(() => {
     if (!window.DB) return;
@@ -327,18 +333,23 @@ function BadmintonPlanner() {
     return slots.length > 0 ? { schedule: slots, gamesPlayed: players.map(() => 0) } : null;
   }, [players]);
 
+  const archivePrevious = useCallback((currentSavedPlans) => {
+    if (!result || !result.schedule?.length) return currentSavedPlans;
+    return [{ id: Date.now(), tag: '', result, savedAt: new Date().toISOString() }, ...currentSavedPlans];
+  }, [result]);
+
   const importSchedule = useCallback(() => {
     const parsed = parseScheduleText(importText);
     if (!parsed) {
       patchState({ importError: 'Could not parse schedule — paste the full copied text.' });
       return;
     }
-    patchState({ result: parsed, scores: {}, showImport: false, importText: '', importError: '' });
-  }, [importText, parseScheduleText]);
+    patchState({ result: parsed, scores: {}, showImport: false, importText: '', importError: '', savedPlans: archivePrevious(savedPlans) });
+  }, [archivePrevious, importText, parseScheduleText, savedPlans]);
 
   const generate = useCallback(() => {
     if (players.length < 4 || isGenerating) return;
-    patchState({ isGenerating: true, result: null, scores: {}, copied: false, genSlot: 0 });
+    patchState({ isGenerating: true, result: null, scores: {}, copied: false, genSlot: 0, savedPlans: archivePrevious(savedPlans) });
     const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
     const gen = generateScheduleGen(playersWithSkill, totalSlots, getCourtsPerSlot(), 0, null, null, { preferMixedTeams });
     let lastValue = null;
@@ -352,7 +363,7 @@ function BadmintonPlanner() {
       else requestAnimationFrame(step);
     }
     requestAnimationFrame(step);
-  }, [computeSkill, getCourtsPerSlot, getPlayersWithAvailability, isGenerating, players.length, totalSlots]);
+  }, [archivePrevious, computeSkill, getCourtsPerSlot, getPlayersWithAvailability, isGenerating, players.length, savedPlans, totalSlots]);
 
   const regenerateRemaining = useCallback(() => {
     if (players.length < 4 || !result) return;
@@ -373,7 +384,9 @@ function BadmintonPlanner() {
     patchState({ result: newResult, scores: nextScores, copied: false });
   }, [computeSkill, fromSlot, fromSlotCourts, getCourtsPerSlot, getPlayersWithAvailability, players.length, result, scores, totalSlots]);
 
-  const clearSchedule = useCallback(() => patchState({ result: null, scores: {}, fromSlot: 1 }), []);
+  const clearSchedule = useCallback(() => {
+    patchState({ result: null, scores: {}, fromSlot: 1, savedPlans: archivePrevious(savedPlans) });
+  }, [archivePrevious, savedPlans]);
 
   const startSlotEdit = useCallback((slotNum) => {
     const s = result?.schedule.find(slot => slot.slot === slotNum);
@@ -527,7 +540,7 @@ function BadmintonPlanner() {
   }, [result, saveTag, savedPlans]);
 
   const loadPlan = useCallback((plan) => {
-    patchState({ result: plan.result, scores: {}, showSavedList: false });
+    patchState({ result: plan.result, scores: {}, activeTab: 'schedule' });
   }, []);
 
   const deletePlan = useCallback((id) => patchState({ savedPlans: savedPlans.filter(plan => plan.id !== id) }), [savedPlans]);
@@ -687,6 +700,25 @@ function BadmintonPlanner() {
           </div>
         </div>
 
+        <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
+          {[['schedule', 'Schedule'], ['archive', `Archive${savedPlans.length ? ` (${savedPlans.length})` : ''}`]].map(([val, label]) => (
+            <button key={val} onClick={() => patchState({ activeTab: val })}
+              style={{
+                flex: 1, background: activeTab === val ? C.accentDim : C.card, color: activeTab === val ? '#fff' : C.textDim,
+                border: `1px solid ${activeTab === val ? C.accentDim : C.border}`, borderRadius: 8, padding: '10px 14px',
+                fontSize: 13, fontWeight: 700, fontFamily: FONT,
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'archive' && (
+          <ArchiveTab savedPlans={savedPlans} loadPlan={loadPlan} deletePlan={deletePlan} />
+        )}
+
+        {activeTab === 'schedule' && (
+        <>
         <div className="settings-row">
           <div style={{ flex: '0 0 auto' }}>
             <label style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Start time</label>
@@ -800,8 +832,6 @@ function BadmintonPlanner() {
           </div>
         )}
 
-        <SavedPlansList savedPlans={savedPlans} showSavedList={showSavedList} toggle={() => patchState({ showSavedList: !showSavedList })} loadPlan={loadPlan} deletePlan={deletePlan} />
-
         {hasAppliedScores && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, background: C.card, border: `1px solid ${C.amber}33`, borderRadius: 8, padding: '8px 14px' }}><span style={{ fontSize: 12, color: C.amber }}>⚡ Scores recorded — re-roll to use updated skill ratings in the next schedule</span></div>}
 
         {result && (
@@ -839,6 +869,8 @@ function BadmintonPlanner() {
             assignToPosition={assignToPosition}
             updateScore={updateScore}
           />
+        )}
+        </>
         )}
       </div>
     </div>

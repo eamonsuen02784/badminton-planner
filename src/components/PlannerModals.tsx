@@ -117,29 +117,31 @@ export function ImportModal({ importText, importError, setImportText, importSche
   );
 }
 
-export function SavedPlansList({ savedPlans, showSavedList, toggle, loadPlan, deletePlan }) {
-  if (savedPlans.length === 0) return null;
+export function ArchiveTab({ savedPlans, loadPlan, deletePlan }) {
+  if (savedPlans.length === 0) {
+    return (
+      <p style={{ color: C.textDim, fontSize: 13, textAlign: 'center', padding: '40px 0' }}>
+        No archived schedules yet — past schedules are kept here for ~2 weeks whenever you generate a new one or clear the current one.
+      </p>
+    );
+  }
   return (
-    <div style={{ marginBottom: 16 }}>
-      <button onClick={toggle} style={{ background: 'none', border: 'none', color: C.textDim, fontFamily: FONT, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0' }}>
-        <LucideIcon name={showSavedList ? 'chevron-up' : 'chevron-down'} size={13} />
-        {savedPlans.length} saved plan{savedPlans.length > 1 ? 's' : ''}
-      </button>
-      {showSavedList && (
-        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {savedPlans.map(plan => (
-            <div key={plan.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px' }}>
-              <LucideIcon name="bookmark" size={13} />
-              <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{plan.tag}</span>
-              <span style={{ fontSize: 11, color: C.textDim }}>{new Date(plan.savedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
-              <button onClick={() => loadPlan(plan)} style={{ background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '5px 10px', fontSize: 12, fontWeight: 600, fontFamily: FONT, cursor: 'pointer' }}>Load</button>
-              <button onClick={() => deletePlan(plan.id)} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}>
-                <LucideIcon name="x" size={14} />
-              </button>
-            </div>
-          ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {savedPlans.map(plan => (
+        <div key={plan.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px' }}>
+          <LucideIcon name="bookmark" size={13} />
+          <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{plan.tag || 'Schedule'}</span>
+          <span style={{ fontSize: 11, color: C.textDim }}>
+            {new Date(plan.savedAt).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+            {' · '}
+            {new Date(plan.savedAt).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit' })}
+          </span>
+          <button onClick={() => loadPlan(plan)} style={{ background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '5px 10px', fontSize: 12, fontWeight: 600, fontFamily: FONT, cursor: 'pointer' }}>Load</button>
+          <button onClick={() => deletePlan(plan.id)} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}>
+            <LucideIcon name="x" size={14} />
+          </button>
         </div>
-      )}
+      ))}
     </div>
   );
 }

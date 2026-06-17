@@ -60,7 +60,7 @@ function createInitialState(): PlannerState {
     savedPlans: loadState(STORAGE_KEYS.savedPlans, []),
     showSavePlan: false,
     saveTag: '',
-    showSavedList: false,
+    activeTab: 'schedule',
     editingSlot: null,
     editLayout: null,
     pendingShare: null,

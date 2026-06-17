@@ -2,6 +2,7 @@ import type { Player } from './algorithm/types';
 
 export const DEFAULT_TOTAL_MINUTES = 180;
 export const DEFAULT_GAME_MINUTES = 15;
+export const ARCHIVE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 export const DEFAULT_PLAYERS: Player[] = [
   { name: 'Eamon', gender: 'M', skill: 2, availFrom: 0, availTo: 0, group: 'full', leavesAt: null },
