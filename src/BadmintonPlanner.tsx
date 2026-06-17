@@ -614,7 +614,7 @@ function BadmintonPlanner() {
   }, [result, saveTag, savedPlans]);
 
   const loadPlan = useCallback((plan) => {
-    patchState({ result: plan.result, scores: {}, activeTab: 'schedule' });
+    patchState({ result: plan.result, scores: {}, activeTab: 'schedule', isConfirmed: false });
   }, []);
 
   const deletePlan = useCallback((id) => patchState({ savedPlans: savedPlans.filter(plan => plan.id !== id) }), [savedPlans]);
@@ -746,6 +746,7 @@ function BadmintonPlanner() {
       numCourts: cfg?.c || numCourts,
       result: { schedule: newSchedule, gamesPlayed: [...gp] },
       scores: restoredScores,
+      isConfirmed: false,
     });
   }, [gameMinutes, numCourts]);
 
@@ -893,7 +894,7 @@ function BadmintonPlanner() {
         />
 
         {players.length >= 4 && (
-          <div className="action-buttons">
+          <div className="action-buttons" style={{ marginBottom: result ? 8 : 24 }}>
             <button onClick={() => patchState({ showImport: true })} style={{ background: 'transparent', color: C.textDim, border: `1px dashed ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontFamily: FONT }}>Import</button>
             <button className="generate-btn" onClick={generate} disabled={isGenerating} style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 8, padding: '14px', fontSize: 14, fontWeight: 700, fontFamily: FONT, letterSpacing: '1px', textTransform: 'uppercase', opacity: isGenerating ? 0.6 : 1, boxShadow: C.shadow }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
@@ -912,12 +913,17 @@ function BadmintonPlanner() {
                 </button>
               )
             )}
-            {result && <button onClick={copySchedule} title="Copy full schedule (with sit list & game counts)" style={{ display: 'flex', alignItems: 'center', gap: 6, background: copied ? C.green : C.card, color: copied ? C.bg : C.text, border: `1px solid ${copied ? C.green : C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT, transition: 'all 0.2s' }}><LucideIcon name={copied ? 'check' : 'copy'} size={15} /> Copy</button>}
-            {result && <button onClick={copyGames} title="Copy games only (matchups, no sit list or stats)" style={{ display: 'flex', alignItems: 'center', gap: 6, background: copiedGames ? C.green : C.card, color: copiedGames ? C.bg : C.textDim, border: `1px solid ${copiedGames ? C.green : C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 12, fontWeight: 700, fontFamily: FONT, transition: 'all 0.2s' }}>{copiedGames ? <LucideIcon name="check" size={15} /> : '⚡'} Quick Copy</button>}
-            {result && <button onClick={saveAsImage} title="Save schedule as an image" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="download" size={15} /> Image</button>}
-            {result && <button onClick={() => patchState({ saveTag: '', showSavePlan: true })} title="Save plan with tag" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="bookmark" size={15} /> Save</button>}
-            {result && <button onClick={shareLink} title="Share schedule via link" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="link" size={15} /> Share</button>}
-            {result && <button onClick={clearSchedule} title="Clear schedule" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="trash" size={15} /> Clear</button>}
+          </div>
+        )}
+
+        {result && (
+          <div className="action-buttons" style={{ marginBottom: 24, flexWrap: 'wrap' }}>
+            <button onClick={copySchedule} title="Copy full schedule (with sit list & game counts)" style={{ display: 'flex', alignItems: 'center', gap: 6, background: copied ? C.green : C.card, color: copied ? C.bg : C.text, border: `1px solid ${copied ? C.green : C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT, transition: 'all 0.2s' }}><LucideIcon name={copied ? 'check' : 'copy'} size={15} /> Copy</button>
+            <button onClick={copyGames} title="Copy games only (matchups, no sit list or stats)" style={{ display: 'flex', alignItems: 'center', gap: 6, background: copiedGames ? C.green : C.card, color: copiedGames ? C.bg : C.textDim, border: `1px solid ${copiedGames ? C.green : C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 12, fontWeight: 700, fontFamily: FONT, transition: 'all 0.2s' }}>{copiedGames ? <LucideIcon name="check" size={15} /> : '⚡'} Quick Copy</button>
+            <button onClick={saveAsImage} title="Save schedule as an image" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="download" size={15} /> Image</button>
+            <button onClick={() => patchState({ saveTag: '', showSavePlan: true })} title="Save plan with tag" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="bookmark" size={15} /> Save</button>
+            <button onClick={shareLink} title="Share schedule via link" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="link" size={15} /> Share</button>
+            <button onClick={clearSchedule} title="Clear schedule" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="trash" size={15} /> Clear</button>
           </div>
         )}
 
