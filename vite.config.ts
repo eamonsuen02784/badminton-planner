@@ -7,9 +7,6 @@ export default defineConfig({
   base: '/badminton-planner/',
   build: {
     outDir: 'dist',
-    rollupOptions: {
-      input: 'index-vite.html',
-    },
   },
   test: {
     environment: 'node',
