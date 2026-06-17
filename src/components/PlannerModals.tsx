@@ -82,8 +82,9 @@ export function SavePlanModal({ needsPin, pinInput, pinError, setPinInput, submi
   );
 }
 
-export function ShareLinkModal({ copiedShareUrl, sharedUrl, shareIsUpdate, hasExisting, copyShareUrl, newShareLink, close }) {
+export function ShareLinkModal({ copiedShareUrl, sharedUrl, shareIsUpdate, hasExisting, live, copyShareUrl, newShareLink, close }) {
   const statusText = shareIsUpdate ? '✓ Schedule updated — same link reflects your latest changes.'
+    : live ? 'Link copied to clipboard. Anyone who opens it sees live updates — edits sync instantly both ways.'
     : 'Link copied to clipboard. Open it on any device to load this schedule.';
   return (
     <ModalShell maxWidth={480}>

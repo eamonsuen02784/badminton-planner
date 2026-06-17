@@ -60,6 +60,7 @@ export interface SharePayload {
     c: number[][][];
     sit: number[];
   }>;
+  confirmed?: boolean;
 }
 
 export interface PlannerState {

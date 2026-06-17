@@ -15,6 +15,14 @@ import {
   SavePlanModal,
   ShareLinkModal,
 } from './components/PlannerModals';
+import {
+  isFirebaseConfigured,
+  loadWinLoss,
+  saveWinLoss,
+  createShare,
+  updateShare,
+  subscribeToShare,
+} from './firebase';
 
 function normalizeApiBase(base) {
   return base ? base.replace(/\/+$/, '') : null;
@@ -120,8 +128,8 @@ function BadmintonPlanner() {
   }, [savedPlans]);
 
   useEffect(() => {
-    if (!window.DB) return;
-    window.DB.load()
+    if (!isFirebaseConfigured()) return;
+    loadWinLoss()
       .then(remote => {
         patchState({
           winLoss: (() => {
@@ -144,9 +152,9 @@ function BadmintonPlanner() {
   }, []);
 
   useEffect(() => {
-    if (!window.DB || !isAdmin) return;
+    if (!isFirebaseConfigured() || !isAdmin) return;
     setDbSynced('syncing');
-    window.DB.save(winLoss).then(() => setDbSynced('synced')).catch(() => setDbSynced('error'));
+    saveWinLoss(winLoss).then(() => setDbSynced('synced')).catch(() => setDbSynced('error'));
   }, [winLoss, isAdmin]);
 
   useEffect(() => {
@@ -157,11 +165,18 @@ function BadmintonPlanner() {
   }, [result]);
 
   useEffect(() => {
-    const apiBase = normalizeApiBase(window.SHARE_API_BASE);
     const params = new URLSearchParams(window.location.search);
-    const shareId = params.get('share');
-    if (shareId && apiBase) {
-      fetch(`${apiBase}/shares/${encodeURIComponent(shareId)}`)
+    const urlShareId = params.get('share');
+
+    if (urlShareId && isFirebaseConfigured()) {
+      patchState({ shareId: urlShareId });
+      window.history.replaceState(null, '', window.location.pathname);
+      return;
+    }
+
+    const apiBase = normalizeApiBase(window.SHARE_API_BASE);
+    if (urlShareId && apiBase) {
+      fetch(`${apiBase}/shares/${encodeURIComponent(urlShareId)}`)
         .then(async response => {
           if (!response.ok) throw new Error(`Share load failed: ${response.status}`);
           return response.json();
@@ -187,6 +202,54 @@ function BadmintonPlanner() {
       }
     } catch {}
   }, []);
+
+  const isApplyingRemoteRef = useRef(false);
+
+  useEffect(() => {
+    if (!shareId || !isFirebaseConfigured()) return;
+    const unsubscribe = subscribeToShare(shareId, data => {
+      if (data?.v === 1 && data.p && data.slots) {
+        isApplyingRemoteRef.current = true;
+        applySharePayload(data);
+        setTimeout(() => { isApplyingRemoteRef.current = false; }, 0);
+      }
+    });
+    return unsubscribe;
+  }, [shareId]);
+
+  const buildSharePayload = useCallback(() => {
+    if (!result) return null;
+    const pwith = getPlayersWithAvailability();
+    return {
+      v: 1,
+      p: pwith.map(p => [p.name, p.gender]),
+      cfg: { g: gameMinutes, c: numCourts },
+      scores: Object.fromEntries(
+        Object.entries(scores)
+          .filter(([, value]) => value?.applied)
+          .map(([key, value]) => [key, { a: value.a, b: value.b }]),
+      ),
+      slots: result.schedule.map(s => ({
+        s: s.slot,
+        c: s.courts.map(court => [
+          court.teamA.map(p => pwith.findIndex(pl => pl.name === p.name)),
+          court.teamB.map(p => pwith.findIndex(pl => pl.name === p.name)),
+        ]),
+        sit: (s.sitting || []).map(p => pwith.findIndex(pl => pl.name === p.name)),
+      })),
+      confirmed: isConfirmed,
+    };
+  }, [gameMinutes, getPlayersWithAvailability, isConfirmed, numCourts, result, scores]);
+
+  useEffect(() => {
+    if (!shareId || !isFirebaseConfigured() || !result) return;
+    if (isApplyingRemoteRef.current) return;
+    const t = setTimeout(() => {
+      const payload = buildSharePayload();
+      if (payload) updateShare(shareId, payload);
+    }, 600);
+    return () => clearTimeout(t);
+  }, [shareId, buildSharePayload]);
 
   const slotTime = useCallback((slotIdx) => {
     const startMin = (slotIdx - 1) * gameMinutes;
@@ -313,7 +376,7 @@ function BadmintonPlanner() {
 
   const clearWinLoss = useCallback(() => {
     patchState({ winLoss: {} });
-    if (window.DB && isAdmin) window.DB.save({});
+    if (isFirebaseConfigured() && isAdmin) saveWinLoss({});
   }, [isAdmin]);
 
   const parseScheduleText = useCallback((text) => {
@@ -352,7 +415,7 @@ function BadmintonPlanner() {
       patchState({ importError: 'Could not parse schedule — paste the full copied text.' });
       return;
     }
-    patchState({ result: parsed, scores: {}, showImport: false, importText: '', importError: '', isConfirmed: false, loadedPlanId: null });
+    patchState({ result: parsed, scores: {}, showImport: false, importText: '', importError: '', isConfirmed: false, loadedPlanId: null, shareId: null, shareToken: null });
   }, [importText, parseScheduleText]);
 
   const importSchedule = useCallback(() => {
@@ -365,7 +428,7 @@ function BadmintonPlanner() {
 
   const runGenerate = useCallback(() => {
     if (players.length < 4 || isGenerating) return;
-    patchState({ isGenerating: true, result: null, scores: {}, copied: false, genSlot: 0, isConfirmed: false, loadedPlanId: null });
+    patchState({ isGenerating: true, result: null, scores: {}, copied: false, genSlot: 0, isConfirmed: false, loadedPlanId: null, shareId: null, shareToken: null });
     const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
     const gen = generateScheduleGen(playersWithSkill, totalSlots, getCourtsPerSlot(), 0, null, null, { preferMixedTeams });
     let lastValue = null;
@@ -419,7 +482,7 @@ function BadmintonPlanner() {
   }, [isConfirmed, players.length, result, runRegenerateRemaining]);
 
   const runClearSchedule = useCallback(() => {
-    patchState({ result: null, scores: {}, fromSlot: 1, isConfirmed: false, loadedPlanId: null });
+    patchState({ result: null, scores: {}, fromSlot: 1, isConfirmed: false, loadedPlanId: null, shareId: null, shareToken: null });
   }, []);
 
   const clearSchedule = useCallback(() => {
@@ -626,7 +689,7 @@ function BadmintonPlanner() {
   }, [loadedPlanId, result, saveTag, savedPlans]);
 
   const loadPlan = useCallback((plan) => {
-    patchState({ result: plan.result, scores: {}, activeTab: 'schedule', isConfirmed: false, loadedPlanId: plan.id });
+    patchState({ result: plan.result, scores: {}, activeTab: 'schedule', isConfirmed: false, loadedPlanId: plan.id, shareId: null, shareToken: null });
   }, []);
 
   const deletePlan = useCallback((id) => {
@@ -637,28 +700,25 @@ function BadmintonPlanner() {
   }, [loadedPlanId, savedPlans]);
 
   const shareLink = useCallback(async (forceNew = false) => {
-    if (!result) return;
-    const pwith = getPlayersWithAvailability();
-    const data = {
-      v: 1,
-      p: pwith.map(p => [p.name, p.gender]),
-      cfg: { g: gameMinutes, c: numCourts },
-      scores: Object.fromEntries(
-        Object.entries(scores)
-          .filter(([, value]) => value?.applied)
-          .map(([key, value]) => [key, { a: value.a, b: value.b }]),
-      ),
-      slots: result.schedule.map(s => ({
-        s: s.slot,
-        c: s.courts.map(court => [
-          court.teamA.map(p => pwith.findIndex(pl => pl.name === p.name)),
-          court.teamB.map(p => pwith.findIndex(pl => pl.name === p.name)),
-        ]),
-        sit: (s.sitting || []).map(p => pwith.findIndex(pl => pl.name === p.name)),
-      })),
-    };
-    const apiBase = normalizeApiBase(window.SHARE_API_BASE);
+    const data = buildSharePayload();
+    if (!data) return;
 
+    if (isFirebaseConfigured()) {
+      const existingId = !forceNew ? shareId : null;
+      const id = existingId || createShare(data);
+      if (existingId) updateShare(existingId, data);
+      if (id) {
+        patchState({ shareId: id, shareToken: null });
+        const url = `${window.location.origin}${window.location.pathname}?share=${encodeURIComponent(id)}`;
+        copyText(url, () => {
+          patchState({ sharedUrl: url, copiedShareUrl: true, showShareModal: true, shareIsUpdate: !!existingId });
+          setTimeout(() => patchState({ copiedShareUrl: false }), 2000);
+        });
+        return;
+      }
+    }
+
+    const apiBase = normalizeApiBase(window.SHARE_API_BASE);
     if (apiBase) {
       try {
         const existingId = !forceNew ? shareId : null;
@@ -694,7 +754,7 @@ function BadmintonPlanner() {
       patchState({ sharedUrl: fallbackUrl, copiedShareUrl: true, showShareModal: true, shareIsUpdate: false });
       setTimeout(() => patchState({ copiedShareUrl: false }), 2000);
     });
-  }, [gameMinutes, getPlayersWithAvailability, numCourts, result, scores, shareId, shareToken]);
+  }, [buildSharePayload, shareId, shareToken]);
 
   const copyShareUrl = useCallback(() => {
     copyText(sharedUrl, () => {
@@ -704,7 +764,7 @@ function BadmintonPlanner() {
   }, [sharedUrl]);
 
   const applySharePayload = useCallback((data: SharePayload) => {
-    const { p: sharedPlayers, cfg, slots, scores: sharedScores } = data;
+    const { p: sharedPlayers, cfg, slots, scores: sharedScores, confirmed } = data;
     const n = sharedPlayers.length;
     const gp = new Array(n).fill(0);
     const cp = new Array(n).fill(0);
@@ -763,7 +823,7 @@ function BadmintonPlanner() {
       numCourts: cfg?.c || numCourts,
       result: { schedule: newSchedule, gamesPlayed: [...gp] },
       scores: restoredScores,
-      isConfirmed: false,
+      isConfirmed: !!confirmed,
       loadedPlanId: null,
     });
   }, [gameMinutes, numCourts]);
@@ -773,7 +833,7 @@ function BadmintonPlanner() {
       <div style={{ maxWidth: 780, margin: '0 auto' }}>
         {showPinPrompt && <PinPromptModal pinInput={pinInput} pinError={pinError} setPinInput={value => patchState({ pinInput: value, pinError: false })} submitPin={submitPin} close={() => patchState({ showPinPrompt: false, pinInput: '', pinError: false })} />}
         {showSavePlan && <SavePlanModal needsPin={window.ADMIN_PIN && !isAdmin} pinInput={pinInput} pinError={pinError} setPinInput={value => patchState({ pinInput: value, pinError: false })} submitPin={submitPin} saveTag={saveTag} setSaveTag={value => patchState({ saveTag: value })} savePlan={savePlan} canUpdate={loadedPlanId != null && savedPlans.some(p => p.id === loadedPlanId)} close={() => patchState({ showSavePlan: false, pinInput: '', pinError: false })} />}
-        {showShareModal && <ShareLinkModal copiedShareUrl={copiedShareUrl} sharedUrl={sharedUrl} shareIsUpdate={shareIsUpdate} hasExisting={!!(shareId && shareToken)} copyShareUrl={copyShareUrl} newShareLink={() => shareLink(true)} close={() => patchState({ showShareModal: false })} />}
+        {showShareModal && <ShareLinkModal copiedShareUrl={copiedShareUrl} sharedUrl={sharedUrl} shareIsUpdate={shareIsUpdate} hasExisting={isFirebaseConfigured() ? !!shareId : !!(shareId && shareToken)} live={isFirebaseConfigured()} copyShareUrl={copyShareUrl} newShareLink={() => shareLink(true)} close={() => patchState({ showShareModal: false })} />}
         {showImport && <ImportModal importText={importText} importError={importError} setImportText={value => patchState({ importText: value, importError: '' })} importSchedule={importSchedule} close={() => patchState({ showImport: false, importText: '', importError: '' })} />}
 
         <div style={{ marginBottom: 28, borderBottom: `1px solid ${C.border}`, paddingBottom: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
@@ -784,7 +844,7 @@ function BadmintonPlanner() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-            {window.DB && <span title={dbSynced === 'synced' ? 'Win-loss synced to cloud' : dbSynced === 'syncing' ? 'Syncing…' : dbSynced === 'error' ? 'Sync failed' : 'Cloud sync ready'} style={{ fontSize: 13, color: dbSynced === 'synced' ? C.green : dbSynced === 'error' ? '#ef4444' : C.textMuted }}>{dbSynced === 'synced' ? '☁ Synced' : dbSynced === 'syncing' ? '⟳' : dbSynced === 'error' ? '☁ ✗' : '☁'}</span>}
+            {isFirebaseConfigured() && <span title={dbSynced === 'synced' ? 'Win-loss synced to cloud' : dbSynced === 'syncing' ? 'Syncing…' : dbSynced === 'error' ? 'Sync failed' : 'Cloud sync ready'} style={{ fontSize: 13, color: dbSynced === 'synced' ? C.green : dbSynced === 'error' ? '#ef4444' : C.textMuted }}>{dbSynced === 'synced' ? '☁ Synced' : dbSynced === 'syncing' ? '⟳' : dbSynced === 'error' ? '☁ ✗' : '☁'}</span>}
             {window.ADMIN_PIN && (
               <button onClick={() => isAdmin ? (sessionStorage.removeItem('bp-admin'), setIsAdmin(false)) : patchState({ showPinPrompt: true })} title={isAdmin ? 'Click to lock score entry' : 'Click to unlock score entry'} style={{ background: isAdmin ? C.accentDim : C.card, color: isAdmin ? '#fff' : C.textMuted, border: `1px solid ${isAdmin ? 'transparent' : C.border}`, borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 700, fontFamily: FONT }}>
                 {isAdmin ? '🔓 Admin' : '🔒 Lock'}
