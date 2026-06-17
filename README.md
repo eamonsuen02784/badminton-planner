@@ -34,12 +34,15 @@ The algorithm balances several goals, in this order:
 - **Score entry** — enter results after each game; valid badminton scores (21-point rules) are enforced
 - **Women's doubles** — at least 2 WD games per session, then relaxes to normal preferences
 - **No burnout** — hard limits on consecutive play and rest
+- **Group-repeat avoidance** — swaps players to avoid repeating the exact same 4-person court group
 - **Extra court** — configure a sub-window where an additional court is available (e.g. +1 court from 60–150 min)
 - **Multi-court** — 1, 2, or 3 base courts with color-coded court assignments
 - **Staggered arrivals** — All here / Early-Late groups / Per-player custom slot ranges
-- **Mid-session changes** — re-generate from any slot to handle late arrivals or player substitutions
+- **Mid-session changes** — re-generate from any slot, or fix just one game without touching the rest ("This game only")
+- **Confirm & Saved Plans** — lock in the schedule for the session; past/saved schedules kept for ~2 weeks, restorable and updatable
+- **Player Bank** — every player you've ever added is remembered; multi-select to bulk-add to today's roster
 - **Persisted schedule** — auto-saves to browser storage; survives page refresh
-- **Cloud share links** — optional Cloudflare Worker backend can store schedules server-side for short links
+- **Sharing** — generates a link that loads the schedule instantly; pushing your edits back to that link only happens when you hit Save (see [Sharing](#sharing) below)
 - **Re-roll** — regenerate in one click until you're happy
 - **Copy to clipboard** — formatted text for group chats
 - **Save as image** — exports schedule as PNG via html2canvas
@@ -88,11 +91,11 @@ Lowest score wins. Skill ratings are derived from each player's win rate from pr
 
 | Setting | Options | Default |
 |---|---|---|
+| Session length | 60–240 min (slider, step = game length) | 180 min |
 | Game length | 8–20 min (slider) | 15 min |
 | Base courts | 1, 2, 3 | 1 |
 | Extra court | Off / On with start offset + duration | Off |
 | Availability | All here / Early-Late / Per player | All here |
-| Session length | Fixed | 180 min (3 hrs) |
 
 ---
 
@@ -117,27 +120,21 @@ Lowest score wins. Skill ratings are derived from each player's win rate from pr
 
 ## Stack
 
-- Single HTML file (`index.html`) — React 18 + Babel loaded from CDN, no build step
+- React 18 + TypeScript, built with Vite (`npm run dev` / `build` / `preview`)
+- Vitest for the algorithm test suite
+- Firebase Realtime Database for sharing and cross-device win/loss sync, with Firebase App Check (reCAPTCHA v3) and scoped database rules for security
 - html2canvas for image export (loaded on demand)
-- Hosted on GitHub Pages
+- Hosted on GitHub Pages, deployed automatically by GitHub Actions on every push to `main`
 
-## Cloud Schedule Sharing
+See [CLAUDE.md](CLAUDE.md) for the full architecture, algorithm internals, and design rationale.
 
-The app can now use an optional Cloudflare Worker for server-side schedule persistence when sharing.
+## Sharing
 
-- Frontend config: set `window.SHARE_API_BASE` in [index-vite.html](/home/esuen/projects/misc/badminton/index-vite.html:1)
-- Worker scaffold: [workers/share-links/src/index.ts](/home/esuen/projects/misc/badminton/workers/share-links/src/index.ts:1)
-- Wrangler config: [workers/share-links/wrangler.toml](/home/esuen/projects/misc/badminton/workers/share-links/wrangler.toml:1)
+- **Share** writes the current schedule to `/shares/{id}` in Firebase and copies a `?share=<id>` link.
+- **Opening that link** does a one-time read — it loads the schedule but doesn't keep listening for further changes.
+- **Save** is the only thing that pushes edits back to the link, for anyone who opens or refreshes it afterward to see.
+- The link stays stable across a page refresh in the same tab (so re-sharing reuses it), but the connection clears when the tab/browser closes — it can't resurface later and overwrite an unrelated schedule.
 
-How it behaves:
-
-- If `window.SHARE_API_BASE` is configured, the Share button uploads the schedule to the worker and copies a short `?share=<id>` link.
-- If it is not configured or the upload fails, the app falls back to the existing hash-based share link.
-- Existing hash share links still load.
-
-Suggested deploy shape:
-
-1. Create a Cloudflare KV namespace for `SHARES`.
-2. Fill in the namespace IDs in `wrangler.toml`.
-3. Deploy the worker on a domain like `https://badminton-share.your-subdomain.workers.dev`.
-4. Set `window.SHARE_API_BASE` to that worker origin.
+A Cloudflare Worker (`workers/share-links/`) and a base64-hash link remain as fallbacks if
+Firebase isn't configured (`window.FIREBASE_CONFIG` unset in `index.html`), though neither
+supports pushing edits back — just a one-shot link.
