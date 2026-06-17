@@ -201,14 +201,27 @@ function BadmintonPlanner() {
     }
 
     const hash = window.location.hash;
-    if (!hash.startsWith('#share=')) return;
-    try {
-      const data = JSON.parse(atob(hash.slice(7)));
-      if (data.v === 1 && data.p && data.slots) {
-        applySharePayload(data);
-        window.history.replaceState(null, '', window.location.pathname);
-      }
-    } catch {}
+    if (hash.startsWith('#share=')) {
+      try {
+        const data = JSON.parse(atob(hash.slice(7)));
+        if (data.v === 1 && data.p && data.slots) {
+          applySharePayload(data);
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+      } catch {}
+      return;
+    }
+
+    // No ?share= in the URL this load, but sessionStorage remembers this tab was already
+    // viewing/editing a share (e.g. a page refresh) — re-fetch its content, since that
+    // content is deliberately excluded from localStorage.
+    if (isSharedSession && shareId && isFirebaseConfigured()) {
+      fetchShare(shareId)
+        .then(data => {
+          if (data?.v === 1 && data.p && data.slots) applySharePayload(data);
+        })
+        .catch(() => {});
+    }
   }, []);
 
   const slotTime = useCallback((slotIdx) => {

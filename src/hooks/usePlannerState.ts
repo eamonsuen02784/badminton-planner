@@ -29,6 +29,19 @@ function loadState<T>(key: string, fallback: T): T {
   }
 }
 
+// shareId/shareToken/isSharedSession use sessionStorage, not localStorage: this keeps a
+// share link stable across a page refresh in the SAME tab (so re-clicking Share reuses the
+// same link), while clearing automatically when the tab/browser closes — unlike localStorage,
+// it can never resurface days later to silently overwrite an unrelated schedule.
+function loadSession<T>(key: string, fallback: T): T {
+  try {
+    const raw = sessionStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function createInitialState(): PlannerState {
   // bp-share-id/bp-share-token used to be persisted across visits, which caused a stale
   // share to silently reconnect (and overwrite local state) on a plain, non-share app open.
@@ -77,9 +90,9 @@ function createInitialState(): PlannerState {
     sharedUrl: '',
     copiedShareUrl: false,
     shareIsUpdate: false,
-    shareId: null,
-    shareToken: null,
-    isSharedSession: false,
+    shareId: loadSession('bp-share-id', null),
+    shareToken: loadSession('bp-share-token', null),
+    isSharedSession: loadSession('bp-is-shared-session', false),
     preferMixedTeams: loadState(STORAGE_KEYS.preferMixedTeams, false),
     isConfirmed: loadState(STORAGE_KEYS.isConfirmed, false),
     pendingOverwrite: null,
@@ -154,6 +167,16 @@ export function usePlannerState() {
     state.loadedPlanId,
     state.isSharedSession,
   ]);
+
+  useEffect(() => {
+    try {
+      if (state.shareId) sessionStorage.setItem('bp-share-id', JSON.stringify(state.shareId));
+      else sessionStorage.removeItem('bp-share-id');
+      if (state.shareToken) sessionStorage.setItem('bp-share-token', JSON.stringify(state.shareToken));
+      else sessionStorage.removeItem('bp-share-token');
+      sessionStorage.setItem('bp-is-shared-session', JSON.stringify(state.isSharedSession));
+    } catch {}
+  }, [state.shareId, state.shareToken, state.isSharedSession]);
 
   const setField = <K extends keyof PlannerState>(key: K, value: PlannerState[K]) =>
     dispatch({ type: 'set', key, value });
