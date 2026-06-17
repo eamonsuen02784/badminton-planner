@@ -124,7 +124,14 @@ export function usePlannerState() {
       loadedPlanId: state.loadedPlanId,
     };
 
+    // While viewing a live shared link, the schedule belongs to that share, not to this
+    // device's own local copy — don't let it overwrite the personal schedule other tabs/
+    // future visits would otherwise load. Settings unrelated to "whose schedule is this"
+    // (player bank, saved plans, win/loss) still persist normally.
+    const liveSessionExempt = new Set(['players', 'result', 'scores', 'isConfirmed']);
+
     for (const [key, storageKey] of Object.entries(STORAGE_KEYS)) {
+      if (state.isLiveSession && liveSessionExempt.has(key)) continue;
       const value = persisted[key as keyof PlannerPersistedState];
       if (key === 'result' && !value) localStorage.removeItem(storageKey);
       else localStorage.setItem(storageKey, JSON.stringify(value));
@@ -145,6 +152,7 @@ export function usePlannerState() {
     state.preferMixedTeams,
     state.isConfirmed,
     state.loadedPlanId,
+    state.isLiveSession,
   ]);
 
   const setField = <K extends keyof PlannerState>(key: K, value: PlannerState[K]) =>
