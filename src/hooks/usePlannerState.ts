@@ -19,6 +19,7 @@ const STORAGE_KEYS = {
   shareToken: 'bp-share-token',
   preferMixedTeams: 'bp-prefer-mixed-teams',
   isConfirmed: 'bp-is-confirmed',
+  loadedPlanId: 'bp-loaded-plan-id',
 } as const;
 
 function loadState<T>(key: string, fallback: T): T {
@@ -75,6 +76,7 @@ function createInitialState(): PlannerState {
     preferMixedTeams: loadState(STORAGE_KEYS.preferMixedTeams, false),
     isConfirmed: loadState(STORAGE_KEYS.isConfirmed, false),
     pendingOverwrite: null,
+    loadedPlanId: loadState(STORAGE_KEYS.loadedPlanId, null),
   };
 }
 
@@ -114,6 +116,7 @@ export function usePlannerState() {
       shareToken: state.shareToken,
       preferMixedTeams: state.preferMixedTeams,
       isConfirmed: state.isConfirmed,
+      loadedPlanId: state.loadedPlanId,
     };
 
     for (const [key, storageKey] of Object.entries(STORAGE_KEYS)) {
@@ -138,6 +141,7 @@ export function usePlannerState() {
     state.shareToken,
     state.preferMixedTeams,
     state.isConfirmed,
+    state.loadedPlanId,
   ]);
 
   const setField = <K extends keyof PlannerState>(key: K, value: PlannerState[K]) =>

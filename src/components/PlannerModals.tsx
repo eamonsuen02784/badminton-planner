@@ -38,7 +38,7 @@ export function ConfirmOverwriteModal({ onConfirm, onCancel }) {
     <ModalShell maxWidth={360}>
       <p style={{ fontWeight: 700, marginBottom: 4 }}>Overwrite confirmed schedule?</p>
       <p style={{ fontSize: 13, color: C.textDim, marginBottom: 16 }}>
-        This schedule is marked Confirmed. Continuing will archive it and replace it with a new one.
+        This schedule is marked Confirmed. Continuing will save it to Saved Plans and replace it with a new one.
       </p>
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={onConfirm} style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '10px', fontWeight: 700, fontFamily: FONT }}>Overwrite</button>
@@ -48,7 +48,7 @@ export function ConfirmOverwriteModal({ onConfirm, onCancel }) {
   );
 }
 
-export function SavePlanModal({ needsPin, pinInput, pinError, setPinInput, submitPin, saveTag, setSaveTag, savePlan, close }) {
+export function SavePlanModal({ needsPin, pinInput, pinError, setPinInput, submitPin, saveTag, setSaveTag, savePlan, canUpdate, close }) {
   return (
     <ModalShell>
       {needsPin ? (
@@ -64,12 +64,18 @@ export function SavePlanModal({ needsPin, pinInput, pinError, setPinInput, submi
         </>
       ) : (
         <>
-          <p style={{ fontWeight: 700, marginBottom: 12 }}>Save this plan</p>
-          <input autoFocus value={saveTag} onChange={e => setSaveTag(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') savePlan(); if (e.key === 'Escape') close(); }} placeholder="e.g. Wed 30/4 · 8 players" style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px', color: C.text, fontSize: 14, fontFamily: FONT, boxSizing: 'border-box' }} />
+          <p style={{ fontWeight: 700, marginBottom: 4 }}>{canUpdate ? 'Update saved plan' : 'Save this plan'}</p>
+          {canUpdate && <p style={{ fontSize: 12, color: C.textDim, marginBottom: 8 }}>This will overwrite the saved plan you loaded, or save as a new copy below.</p>}
+          <input autoFocus value={saveTag} onChange={e => setSaveTag(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') savePlan(canUpdate); if (e.key === 'Escape') close(); }} placeholder="e.g. Wed 30/4 · 8 players" style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px', color: C.text, fontSize: 14, fontFamily: FONT, boxSizing: 'border-box', marginTop: canUpdate ? 0 : 12 }} />
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button onClick={savePlan} disabled={!saveTag.trim()} style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '10px', fontWeight: 700, fontFamily: FONT, opacity: saveTag.trim() ? 1 : 0.4 }}>Save</button>
+            <button onClick={() => savePlan(canUpdate)} disabled={!saveTag.trim()} style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '10px', fontWeight: 700, fontFamily: FONT, opacity: saveTag.trim() ? 1 : 0.4 }}>{canUpdate ? 'Update' : 'Save'}</button>
             <button onClick={close} style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px 16px', fontFamily: FONT }}>Cancel</button>
           </div>
+          {canUpdate && (
+            <button onClick={() => savePlan(false)} disabled={!saveTag.trim()} style={{ marginTop: 8, width: '100%', background: 'transparent', color: C.textMuted, border: `1px dashed ${C.border}`, borderRadius: 6, padding: '7px', fontFamily: FONT, fontSize: 12, opacity: saveTag.trim() ? 1 : 0.4 }}>
+            Save as a new copy instead
+            </button>
+          )}
         </>
       )}
     </ModalShell>
@@ -136,7 +142,7 @@ export function ArchiveTab({ savedPlans, loadPlan, deletePlan }) {
   if (savedPlans.length === 0) {
     return (
       <p style={{ color: C.textDim, fontSize: 13, textAlign: 'center', padding: '40px 0' }}>
-        No archived schedules yet — past schedules are kept here for ~2 weeks whenever you generate a new one or clear the current one.
+        No saved plans yet — past schedules are kept here for ~2 weeks whenever you generate a new one, clear the current one, or hit Save.
       </p>
     );
   }

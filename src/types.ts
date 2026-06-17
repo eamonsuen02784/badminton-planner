@@ -106,6 +106,7 @@ export interface PlannerState {
   preferMixedTeams: boolean;
   isConfirmed: boolean;
   pendingOverwrite: 'generate' | 'clear' | 'import' | 'regenerateRemaining' | null;
+  loadedPlanId: number | null;
 }
 
 export interface PlannerPersistedState {
@@ -125,6 +126,7 @@ export interface PlannerPersistedState {
   shareToken: string | null;
   isConfirmed: boolean;
   preferMixedTeams: boolean;
+  loadedPlanId: number | null;
 }
 
 export interface ScheduleGridProps {

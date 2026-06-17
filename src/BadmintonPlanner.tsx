@@ -93,6 +93,7 @@ function BadmintonPlanner() {
     preferMixedTeams,
     isConfirmed,
     pendingOverwrite,
+    loadedPlanId,
   } = state;
 
   const totalSlots = Math.floor(totalMinutes / gameMinutes);
@@ -350,7 +351,7 @@ function BadmintonPlanner() {
       patchState({ importError: 'Could not parse schedule — paste the full copied text.' });
       return;
     }
-    patchState({ result: parsed, scores: {}, showImport: false, importText: '', importError: '', isConfirmed: false });
+    patchState({ result: parsed, scores: {}, showImport: false, importText: '', importError: '', isConfirmed: false, loadedPlanId: null });
   }, [importText, parseScheduleText]);
 
   const importSchedule = useCallback(() => {
@@ -363,7 +364,7 @@ function BadmintonPlanner() {
 
   const runGenerate = useCallback(() => {
     if (players.length < 4 || isGenerating) return;
-    patchState({ isGenerating: true, result: null, scores: {}, copied: false, genSlot: 0, isConfirmed: false });
+    patchState({ isGenerating: true, result: null, scores: {}, copied: false, genSlot: 0, isConfirmed: false, loadedPlanId: null });
     const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
     const gen = generateScheduleGen(playersWithSkill, totalSlots, getCourtsPerSlot(), 0, null, null, { preferMixedTeams });
     let lastValue = null;
@@ -404,7 +405,7 @@ function BadmintonPlanner() {
       const match = key.match(/^s(\d+)c/);
       if (match && parseInt(match[1]) < fromSlot) nextScores[key] = scores[key];
     }
-    patchState({ result: newResult, scores: nextScores, copied: false, isConfirmed: false });
+    patchState({ result: newResult, scores: nextScores, copied: false, isConfirmed: false, loadedPlanId: null });
   }, [computeSkill, fromSlot, fromSlotCourts, getCourtsPerSlot, getPlayersWithAvailability, players.length, preferMixedTeams, result, scores, totalSlots]);
 
   const regenerateRemaining = useCallback(() => {
@@ -417,7 +418,7 @@ function BadmintonPlanner() {
   }, [isConfirmed, players.length, result, runRegenerateRemaining]);
 
   const runClearSchedule = useCallback(() => {
-    patchState({ result: null, scores: {}, fromSlot: 1, isConfirmed: false });
+    patchState({ result: null, scores: {}, fromSlot: 1, isConfirmed: false, loadedPlanId: null });
   }, []);
 
   const clearSchedule = useCallback(() => {
@@ -604,20 +605,35 @@ function BadmintonPlanner() {
     link.click();
   }, []);
 
-  const savePlan = useCallback(() => {
+  const savePlan = useCallback((overwrite) => {
     if (!result || !saveTag.trim()) return;
-    patchState({
-      savedPlans: [{ id: Date.now(), tag: saveTag.trim(), result, savedAt: new Date().toISOString() }, ...savedPlans],
-      showSavePlan: false,
-      saveTag: '',
-    });
-  }, [result, saveTag, savedPlans]);
+    if (overwrite && loadedPlanId != null && savedPlans.some(p => p.id === loadedPlanId)) {
+      patchState({
+        savedPlans: savedPlans.map(p => p.id === loadedPlanId ? { ...p, tag: saveTag.trim(), result, savedAt: new Date().toISOString() } : p),
+        showSavePlan: false,
+        saveTag: '',
+      });
+    } else {
+      const newId = Date.now();
+      patchState({
+        savedPlans: [{ id: newId, tag: saveTag.trim(), result, savedAt: new Date().toISOString() }, ...savedPlans],
+        showSavePlan: false,
+        saveTag: '',
+        loadedPlanId: newId,
+      });
+    }
+  }, [loadedPlanId, result, saveTag, savedPlans]);
 
   const loadPlan = useCallback((plan) => {
-    patchState({ result: plan.result, scores: {}, activeTab: 'schedule', isConfirmed: false });
+    patchState({ result: plan.result, scores: {}, activeTab: 'schedule', isConfirmed: false, loadedPlanId: plan.id });
   }, []);
 
-  const deletePlan = useCallback((id) => patchState({ savedPlans: savedPlans.filter(plan => plan.id !== id) }), [savedPlans]);
+  const deletePlan = useCallback((id) => {
+    patchState({
+      savedPlans: savedPlans.filter(plan => plan.id !== id),
+      ...(id === loadedPlanId ? { loadedPlanId: null } : {}),
+    });
+  }, [loadedPlanId, savedPlans]);
 
   const shareLink = useCallback(async (forceNew = false) => {
     if (!result) return;
@@ -747,6 +763,7 @@ function BadmintonPlanner() {
       result: { schedule: newSchedule, gamesPlayed: [...gp] },
       scores: restoredScores,
       isConfirmed: false,
+      loadedPlanId: null,
     });
   }, [gameMinutes, numCourts]);
 
@@ -754,7 +771,7 @@ function BadmintonPlanner() {
     <div style={{ background: C.bg, minHeight: '100vh', color: C.text, fontFamily: FONT, padding: '24px 16px' }}>
       <div style={{ maxWidth: 780, margin: '0 auto' }}>
         {showPinPrompt && <PinPromptModal pinInput={pinInput} pinError={pinError} setPinInput={value => patchState({ pinInput: value, pinError: false })} submitPin={submitPin} close={() => patchState({ showPinPrompt: false, pinInput: '', pinError: false })} />}
-        {showSavePlan && <SavePlanModal needsPin={window.ADMIN_PIN && !isAdmin} pinInput={pinInput} pinError={pinError} setPinInput={value => patchState({ pinInput: value, pinError: false })} submitPin={submitPin} saveTag={saveTag} setSaveTag={value => patchState({ saveTag: value })} savePlan={savePlan} close={() => patchState({ showSavePlan: false, pinInput: '', pinError: false })} />}
+        {showSavePlan && <SavePlanModal needsPin={window.ADMIN_PIN && !isAdmin} pinInput={pinInput} pinError={pinError} setPinInput={value => patchState({ pinInput: value, pinError: false })} submitPin={submitPin} saveTag={saveTag} setSaveTag={value => patchState({ saveTag: value })} savePlan={savePlan} canUpdate={loadedPlanId != null && savedPlans.some(p => p.id === loadedPlanId)} close={() => patchState({ showSavePlan: false, pinInput: '', pinError: false })} />}
         {showShareModal && <ShareLinkModal copiedShareUrl={copiedShareUrl} sharedUrl={sharedUrl} shareIsUpdate={shareIsUpdate} hasExisting={!!(shareId && shareToken)} copyShareUrl={copyShareUrl} newShareLink={() => shareLink(true)} close={() => patchState({ showShareModal: false })} />}
         {showImport && <ImportModal importText={importText} importError={importError} setImportText={value => patchState({ importText: value, importError: '' })} importSchedule={importSchedule} close={() => patchState({ showImport: false, importText: '', importError: '' })} />}
 
@@ -776,7 +793,7 @@ function BadmintonPlanner() {
         </div>
 
         <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-          {[['schedule', 'Schedule'], ['archive', `Archive${savedPlans.length ? ` (${savedPlans.length})` : ''}`]].map(([val, label]) => (
+          {[['schedule', 'Schedule'], ['archive', `Saved Plans${savedPlans.length ? ` (${savedPlans.length})` : ''}`]].map(([val, label]) => (
             <button key={val} onClick={() => patchState({ activeTab: val })}
               style={{
                 flex: 1, background: activeTab === val ? C.accentDim : C.card, color: activeTab === val ? '#fff' : C.textDim,
@@ -921,7 +938,7 @@ function BadmintonPlanner() {
             <button onClick={copySchedule} title="Copy full schedule (with sit list & game counts)" style={{ display: 'flex', alignItems: 'center', gap: 6, background: copied ? C.green : C.card, color: copied ? C.bg : C.text, border: `1px solid ${copied ? C.green : C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT, transition: 'all 0.2s' }}><LucideIcon name={copied ? 'check' : 'copy'} size={15} /> Copy</button>
             <button onClick={copyGames} title="Copy games only (matchups, no sit list or stats)" style={{ display: 'flex', alignItems: 'center', gap: 6, background: copiedGames ? C.green : C.card, color: copiedGames ? C.bg : C.textDim, border: `1px solid ${copiedGames ? C.green : C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 12, fontWeight: 700, fontFamily: FONT, transition: 'all 0.2s' }}>{copiedGames ? <LucideIcon name="check" size={15} /> : '⚡'} Quick Copy</button>
             <button onClick={saveAsImage} title="Save schedule as an image" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="download" size={15} /> Image</button>
-            <button onClick={() => patchState({ saveTag: '', showSavePlan: true })} title="Save plan with tag" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="bookmark" size={15} /> Save</button>
+            <button onClick={() => { const loaded = savedPlans.find(p => p.id === loadedPlanId); patchState({ saveTag: loaded ? loaded.tag : '', showSavePlan: true }); }} title="Save plan with tag" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="bookmark" size={15} /> Save</button>
             <button onClick={shareLink} title="Share schedule via link" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="link" size={15} /> Share</button>
             <button onClick={clearSchedule} title="Clear schedule" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="trash" size={15} /> Clear</button>
           </div>
