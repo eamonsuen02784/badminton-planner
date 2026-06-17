@@ -138,6 +138,11 @@ Sharing went through a few iterations during development; here's the model that 
   local until you explicitly hit Save — at which point it updates both your local Saved Plans
   entry and the live `/shares/{id}` document, for anyone with that link to see next time they
   open or refresh it.
+- **Opening a share also auto-saves it locally**: `applySharePayload` upserts a Saved Plans entry
+  tagged by `sourceShareId` (shown as "Shared schedule" when untagged), so each device that opens
+  a link gets it findable in its own Saved Plans without needing the link again. Reopening the
+  same link updates that same entry instead of creating duplicates, and sets `loadedPlanId` so a
+  subsequent Save offers Update against it.
 - **Cross-tab safety**: while a tab is showing a schedule from a share (`isSharedSession` true),
   `players`/`result`/`scores`/`isConfirmed` are excluded from the normal `localStorage`
   persistence in `usePlannerState`. This means a tab idling on someone else's shared schedule —

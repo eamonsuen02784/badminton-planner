@@ -163,7 +163,7 @@ export function ArchiveTab({ savedPlans, loadPlan, deletePlan }) {
       {savedPlans.map(plan => (
         <div key={plan.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px' }}>
           <LucideIcon name="bookmark" size={13} />
-          <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{plan.tag || 'Schedule'}</span>
+          <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{plan.tag || (plan.sourceShareId ? 'Shared schedule' : 'Schedule')}</span>
           <span style={{ fontSize: 11, color: C.textDim }}>
             {new Date(plan.savedAt).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
             {' · '}

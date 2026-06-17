@@ -125,6 +125,9 @@ export default function AboutTab() {
         <Row label="Reusing the link">Refreshing the page in the same tab keeps you connected to the same
           link — clicking Share again reuses it instead of creating a new one, and the page re-loads that
           link's content on refresh.</Row>
+        <Row label="Saved automatically">Opening a share link also adds it to that device's own Saved Plans
+          (as "Shared schedule"), so you can find it again later without needing the link. Reopening the same
+          link updates that same entry rather than piling up duplicates.</Row>
         <Row label="Edit access">Viewing a shared link never requires anything. Actually editing it still
           needs the admin PIN, same as editing locally.</Row>
       </Section>

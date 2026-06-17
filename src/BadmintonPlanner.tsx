@@ -173,7 +173,7 @@ function BadmintonPlanner() {
       fetchShare(urlShareId)
         .then(data => {
           if (data?.v === 1 && data.p && data.slots) {
-            applySharePayload(data);
+            applySharePayload(data, urlShareId);
             patchState({ shareId: urlShareId, isSharedSession: true });
           }
         })
@@ -218,7 +218,7 @@ function BadmintonPlanner() {
     if (isSharedSession && shareId && isFirebaseConfigured()) {
       fetchShare(shareId)
         .then(data => {
-          if (data?.v === 1 && data.p && data.slots) applySharePayload(data);
+          if (data?.v === 1 && data.p && data.slots) applySharePayload(data, shareId);
         })
         .catch(() => {});
     }
@@ -773,7 +773,7 @@ function BadmintonPlanner() {
     });
   }, [sharedUrl]);
 
-  const applySharePayload = useCallback((data: SharePayload) => {
+  const applySharePayload = useCallback((data: SharePayload, sourceShareId) => {
     const { p: sharedPlayers, cfg, slots, scores: sharedScores, confirmed } = data;
     const n = sharedPlayers.length;
     const gp = new Array(n).fill(0);
@@ -827,16 +827,32 @@ function BadmintonPlanner() {
       });
     });
 
+    const newResult = { schedule: newSchedule, gamesPlayed: [...gp] };
+
+    let nextSavedPlans = savedPlans;
+    let newLoadedPlanId = null;
+    if (sourceShareId) {
+      const existing = savedPlans.find(p => p.sourceShareId === sourceShareId);
+      if (existing) {
+        newLoadedPlanId = existing.id;
+        nextSavedPlans = savedPlans.map(p => p.id === existing.id ? { ...p, result: newResult, savedAt: new Date().toISOString() } : p);
+      } else {
+        newLoadedPlanId = Date.now();
+        nextSavedPlans = [{ id: newLoadedPlanId, tag: '', result: newResult, savedAt: new Date().toISOString(), sourceShareId }, ...savedPlans];
+      }
+    }
+
     patchState({
       players: sharedPlayers.map(([name, gender]) => ({ name, gender, skill: 2, availFrom: 0, availTo: slots.length - 1, group: 'full', leavesAt: null })),
       gameMinutes: cfg?.g || gameMinutes,
       numCourts: cfg?.c || numCourts,
-      result: { schedule: newSchedule, gamesPlayed: [...gp] },
+      result: newResult,
       scores: restoredScores,
       isConfirmed: !!confirmed,
-      loadedPlanId: null,
+      loadedPlanId: newLoadedPlanId,
+      savedPlans: nextSavedPlans,
     });
-  }, [gameMinutes, numCourts]);
+  }, [gameMinutes, numCourts, savedPlans]);
 
   return (
     <div style={{ background: C.bg, minHeight: '100vh', color: C.text, fontFamily: FONT, padding: '24px 16px' }}>

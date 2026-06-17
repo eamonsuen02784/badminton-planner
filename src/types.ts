@@ -38,6 +38,7 @@ export interface SavedPlan {
   tag: string;
   result: PlannerResult;
   savedAt: string;
+  sourceShareId?: string | null;
 }
 
 export interface EditLayout {
