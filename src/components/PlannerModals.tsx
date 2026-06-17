@@ -33,6 +33,21 @@ export function PinPromptModal({ pinInput, pinError, setPinInput, submitPin, clo
   );
 }
 
+export function ConfirmOverwriteModal({ onConfirm, onCancel }) {
+  return (
+    <ModalShell maxWidth={360}>
+      <p style={{ fontWeight: 700, marginBottom: 4 }}>Overwrite confirmed schedule?</p>
+      <p style={{ fontSize: 13, color: C.textDim, marginBottom: 16 }}>
+        This schedule is marked Confirmed. Continuing will archive it and replace it with a new one.
+      </p>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={onConfirm} style={{ flex: 1, background: C.accentDim, color: '#fff', border: 'none', borderRadius: 6, padding: '10px', fontWeight: 700, fontFamily: FONT }}>Overwrite</button>
+        <button onClick={onCancel} style={{ background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px 16px', fontFamily: FONT }}>Cancel</button>
+      </div>
+    </ModalShell>
+  );
+}
+
 export function SavePlanModal({ needsPin, pinInput, pinError, setPinInput, submitPin, saveTag, setSaveTag, savePlan, close }) {
   return (
     <ModalShell>

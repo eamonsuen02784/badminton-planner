@@ -7,6 +7,7 @@ import PlayerList from './components/PlayerList';
 import ScheduleGrid from './components/ScheduleGrid';
 import {
   ArchiveTab,
+  ConfirmOverwriteModal,
   ImportModal,
   LucideIcon,
   PinPromptModal,
@@ -90,6 +91,8 @@ function BadmintonPlanner() {
     shareId,
     shareToken,
     preferMixedTeams,
+    isConfirmed,
+    pendingOverwrite,
   } = state;
 
   const totalSlots = Math.floor(totalMinutes / gameMinutes);
@@ -341,23 +344,26 @@ function BadmintonPlanner() {
     return slots.length > 0 ? { schedule: slots, gamesPlayed: players.map(() => 0) } : null;
   }, [players]);
 
-  const archivePrevious = useCallback((currentSavedPlans) => {
-    if (!result || !result.schedule?.length) return currentSavedPlans;
-    return [{ id: Date.now(), tag: '', result, savedAt: new Date().toISOString() }, ...currentSavedPlans];
-  }, [result]);
-
-  const importSchedule = useCallback(() => {
+  const runImport = useCallback(() => {
     const parsed = parseScheduleText(importText);
     if (!parsed) {
       patchState({ importError: 'Could not parse schedule — paste the full copied text.' });
       return;
     }
-    patchState({ result: parsed, scores: {}, showImport: false, importText: '', importError: '', savedPlans: archivePrevious(savedPlans) });
-  }, [archivePrevious, importText, parseScheduleText, savedPlans]);
+    patchState({ result: parsed, scores: {}, showImport: false, importText: '', importError: '', isConfirmed: false });
+  }, [importText, parseScheduleText]);
 
-  const generate = useCallback(() => {
+  const importSchedule = useCallback(() => {
+    if (isConfirmed) {
+      patchState({ pendingOverwrite: 'import' });
+      return;
+    }
+    runImport();
+  }, [isConfirmed, runImport]);
+
+  const runGenerate = useCallback(() => {
     if (players.length < 4 || isGenerating) return;
-    patchState({ isGenerating: true, result: null, scores: {}, copied: false, genSlot: 0, savedPlans: archivePrevious(savedPlans) });
+    patchState({ isGenerating: true, result: null, scores: {}, copied: false, genSlot: 0, isConfirmed: false });
     const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
     const gen = generateScheduleGen(playersWithSkill, totalSlots, getCourtsPerSlot(), 0, null, null, { preferMixedTeams });
     let lastValue = null;
@@ -371,9 +377,18 @@ function BadmintonPlanner() {
       else requestAnimationFrame(step);
     }
     requestAnimationFrame(step);
-  }, [archivePrevious, computeSkill, getCourtsPerSlot, getPlayersWithAvailability, isGenerating, players.length, savedPlans, totalSlots]);
+  }, [computeSkill, getCourtsPerSlot, getPlayersWithAvailability, isGenerating, players.length, preferMixedTeams, totalSlots]);
 
-  const regenerateRemaining = useCallback(() => {
+  const generate = useCallback(() => {
+    if (players.length < 4 || isGenerating) return;
+    if (isConfirmed) {
+      patchState({ pendingOverwrite: 'generate' });
+      return;
+    }
+    runGenerate();
+  }, [isConfirmed, isGenerating, players.length, runGenerate]);
+
+  const runRegenerateRemaining = useCallback(() => {
     if (players.length < 4 || !result) return;
     const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
     const keptSlots = result.schedule.slice(0, fromSlot - 1);
@@ -389,12 +404,45 @@ function BadmintonPlanner() {
       const match = key.match(/^s(\d+)c/);
       if (match && parseInt(match[1]) < fromSlot) nextScores[key] = scores[key];
     }
-    patchState({ result: newResult, scores: nextScores, copied: false });
-  }, [computeSkill, fromSlot, fromSlotCourts, getCourtsPerSlot, getPlayersWithAvailability, players.length, result, scores, totalSlots]);
+    patchState({ result: newResult, scores: nextScores, copied: false, isConfirmed: false });
+  }, [computeSkill, fromSlot, fromSlotCourts, getCourtsPerSlot, getPlayersWithAvailability, players.length, preferMixedTeams, result, scores, totalSlots]);
+
+  const regenerateRemaining = useCallback(() => {
+    if (players.length < 4 || !result) return;
+    if (isConfirmed) {
+      patchState({ pendingOverwrite: 'regenerateRemaining' });
+      return;
+    }
+    runRegenerateRemaining();
+  }, [isConfirmed, players.length, result, runRegenerateRemaining]);
+
+  const runClearSchedule = useCallback(() => {
+    patchState({ result: null, scores: {}, fromSlot: 1, isConfirmed: false });
+  }, []);
 
   const clearSchedule = useCallback(() => {
-    patchState({ result: null, scores: {}, fromSlot: 1, savedPlans: archivePrevious(savedPlans) });
-  }, [archivePrevious, savedPlans]);
+    if (isConfirmed) {
+      patchState({ pendingOverwrite: 'clear' });
+      return;
+    }
+    runClearSchedule();
+  }, [isConfirmed, runClearSchedule]);
+
+  const confirmSchedule = useCallback(() => patchState({ isConfirmed: true }), []);
+  const unconfirmSchedule = useCallback(() => patchState({ isConfirmed: false }), []);
+
+  const executeOverwrite = useCallback(() => {
+    if (result && result.schedule?.length) {
+      patchState({ savedPlans: [{ id: Date.now(), tag: '', result, savedAt: new Date().toISOString() }, ...savedPlans] });
+    }
+    patchState({ pendingOverwrite: null });
+    if (pendingOverwrite === 'generate') runGenerate();
+    else if (pendingOverwrite === 'clear') runClearSchedule();
+    else if (pendingOverwrite === 'import') runImport();
+    else if (pendingOverwrite === 'regenerateRemaining') runRegenerateRemaining();
+  }, [pendingOverwrite, result, savedPlans, runGenerate, runClearSchedule, runImport, runRegenerateRemaining]);
+
+  const cancelOverwrite = useCallback(() => patchState({ pendingOverwrite: null }), []);
 
   const startSlotEdit = useCallback((slotNum) => {
     const s = result?.schedule.find(slot => slot.slot === slotNum);
@@ -850,13 +898,28 @@ function BadmintonPlanner() {
                 {isGenerating ? `Slot ${genSlot} / ${totalSlots}…` : result ? 'Re-roll' : `Generate (${totalSlots} slots)`}
               </span>
             </button>
-            {result && <button onClick={copySchedule} title="Copy full schedule (with sit list & game counts)" style={{ background: copied ? C.green : C.card, color: copied ? C.bg : C.text, border: `1px solid ${copied ? C.green : C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 14, fontWeight: 700, fontFamily: FONT, transition: 'all 0.2s', minWidth: 52 }}><LucideIcon name={copied ? 'check' : 'copy'} size={15} /></button>}
-            {result && <button onClick={copyGames} title="Copy games only (matchups, no sit list or stats)" style={{ background: copiedGames ? C.green : C.card, color: copiedGames ? C.bg : C.textDim, border: `1px solid ${copiedGames ? C.green : C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 12, fontWeight: 700, fontFamily: FONT, transition: 'all 0.2s' }}>{copiedGames ? <LucideIcon name="check" size={15} /> : '⚡ Copy'}</button>}
-            {result && <button onClick={saveAsImage} style={{ background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontFamily: FONT, minWidth: 52 }}><LucideIcon name="download" size={15} /></button>}
-            {result && <button onClick={() => patchState({ saveTag: '', showSavePlan: true })} title="Save plan with tag" style={{ background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontFamily: FONT, minWidth: 52 }}><LucideIcon name="bookmark" size={15} /></button>}
-            {result && <button onClick={shareLink} title="Share schedule via link" style={{ background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontFamily: FONT, minWidth: 52 }}><LucideIcon name="link" size={15} /></button>}
-            {result && <button onClick={clearSchedule} title="Clear saved schedule" style={{ background: C.card, color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontFamily: FONT, minWidth: 52 }}><LucideIcon name="trash" size={15} /></button>}
+            {result && (
+              isConfirmed ? (
+                <button onClick={unconfirmSchedule} title="Click to unlock for editing" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.green, color: C.bg, border: 'none', borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}>
+                  <LucideIcon name="check" size={15} /> Confirmed
+                </button>
+              ) : (
+                <button onClick={confirmSchedule} title="Lock this as the schedule for the session" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}>
+                  <LucideIcon name="check" size={15} /> Confirm
+                </button>
+              )
+            )}
+            {result && <button onClick={copySchedule} title="Copy full schedule (with sit list & game counts)" style={{ display: 'flex', alignItems: 'center', gap: 6, background: copied ? C.green : C.card, color: copied ? C.bg : C.text, border: `1px solid ${copied ? C.green : C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT, transition: 'all 0.2s' }}><LucideIcon name={copied ? 'check' : 'copy'} size={15} /> Copy</button>}
+            {result && <button onClick={copyGames} title="Copy games only (matchups, no sit list or stats)" style={{ display: 'flex', alignItems: 'center', gap: 6, background: copiedGames ? C.green : C.card, color: copiedGames ? C.bg : C.textDim, border: `1px solid ${copiedGames ? C.green : C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 12, fontWeight: 700, fontFamily: FONT, transition: 'all 0.2s' }}>{copiedGames ? <LucideIcon name="check" size={15} /> : '⚡'} Quick Copy</button>}
+            {result && <button onClick={saveAsImage} title="Save schedule as an image" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="download" size={15} /> Image</button>}
+            {result && <button onClick={() => patchState({ saveTag: '', showSavePlan: true })} title="Save plan with tag" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="bookmark" size={15} /> Save</button>}
+            {result && <button onClick={shareLink} title="Share schedule via link" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="link" size={15} /> Share</button>}
+            {result && <button onClick={clearSchedule} title="Clear schedule" style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.card, color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', fontSize: 13, fontWeight: 700, fontFamily: FONT }}><LucideIcon name="trash" size={15} /> Clear</button>}
           </div>
+        )}
+
+        {pendingOverwrite && (
+          <ConfirmOverwriteModal onConfirm={executeOverwrite} onCancel={cancelOverwrite} />
         )}
 
         {hasAppliedScores && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, background: C.card, border: `1px solid ${C.amber}33`, borderRadius: 8, padding: '8px 14px' }}><span style={{ fontSize: 12, color: C.amber }}>⚡ Scores recorded — re-roll to use updated skill ratings in the next schedule</span></div>}

@@ -104,6 +104,8 @@ export interface PlannerState {
   shareId: string | null;
   shareToken: string | null;
   preferMixedTeams: boolean;
+  isConfirmed: boolean;
+  pendingOverwrite: 'generate' | 'clear' | 'import' | 'regenerateRemaining' | null;
 }
 
 export interface PlannerPersistedState {
@@ -121,6 +123,7 @@ export interface PlannerPersistedState {
   savedPlans: SavedPlan[];
   shareId: string | null;
   shareToken: string | null;
+  isConfirmed: boolean;
   preferMixedTeams: boolean;
 }
 
