@@ -7,6 +7,7 @@ export default defineConfig({
   base: '/badminton-planner/',
   build: {
     outDir: 'dist',
+    minify: 'terser',
   },
   test: {
     environment: 'node',

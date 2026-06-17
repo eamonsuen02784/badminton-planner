@@ -217,40 +217,6 @@ function BadmintonPlanner() {
     return unsubscribe;
   }, [shareId]);
 
-  const buildSharePayload = useCallback(() => {
-    if (!result) return null;
-    const pwith = getPlayersWithAvailability();
-    return {
-      v: 1,
-      p: pwith.map(p => [p.name, p.gender]),
-      cfg: { g: gameMinutes, c: numCourts },
-      scores: Object.fromEntries(
-        Object.entries(scores)
-          .filter(([, value]) => value?.applied)
-          .map(([key, value]) => [key, { a: value.a, b: value.b }]),
-      ),
-      slots: result.schedule.map(s => ({
-        s: s.slot,
-        c: s.courts.map(court => [
-          court.teamA.map(p => pwith.findIndex(pl => pl.name === p.name)),
-          court.teamB.map(p => pwith.findIndex(pl => pl.name === p.name)),
-        ]),
-        sit: (s.sitting || []).map(p => pwith.findIndex(pl => pl.name === p.name)),
-      })),
-      confirmed: isConfirmed,
-    };
-  }, [gameMinutes, getPlayersWithAvailability, isConfirmed, numCourts, result, scores]);
-
-  useEffect(() => {
-    if (!shareId || !isFirebaseConfigured() || !result) return;
-    if (isApplyingRemoteRef.current) return;
-    const t = setTimeout(() => {
-      const payload = buildSharePayload();
-      if (payload) updateShare(shareId, payload);
-    }, 600);
-    return () => clearTimeout(t);
-  }, [shareId, buildSharePayload]);
-
   const slotTime = useCallback((slotIdx) => {
     const startMin = (slotIdx - 1) * gameMinutes;
     const endMin = slotIdx * gameMinutes;
@@ -296,6 +262,40 @@ function BadmintonPlanner() {
       return next;
     });
   }, [players, staggerMode, totalSlots]);
+
+  const buildSharePayload = useCallback(() => {
+    if (!result) return null;
+    const pwith = getPlayersWithAvailability();
+    return {
+      v: 1,
+      p: pwith.map(p => [p.name, p.gender]),
+      cfg: { g: gameMinutes, c: numCourts },
+      scores: Object.fromEntries(
+        Object.entries(scores)
+          .filter(([, value]) => value?.applied)
+          .map(([key, value]) => [key, { a: value.a, b: value.b }]),
+      ),
+      slots: result.schedule.map(s => ({
+        s: s.slot,
+        c: s.courts.map(court => [
+          court.teamA.map(p => pwith.findIndex(pl => pl.name === p.name)),
+          court.teamB.map(p => pwith.findIndex(pl => pl.name === p.name)),
+        ]),
+        sit: (s.sitting || []).map(p => pwith.findIndex(pl => pl.name === p.name)),
+      })),
+      confirmed: isConfirmed,
+    };
+  }, [gameMinutes, getPlayersWithAvailability, isConfirmed, numCourts, result, scores]);
+
+  useEffect(() => {
+    if (!shareId || !isFirebaseConfigured() || !result) return;
+    if (isApplyingRemoteRef.current) return;
+    const t = setTimeout(() => {
+      const payload = buildSharePayload();
+      if (payload) updateShare(shareId, payload);
+    }, 600);
+    return () => clearTimeout(t);
+  }, [shareId, buildSharePayload]);
 
   const computeSkill = useCallback((name) => {
     const wl = winLoss[name];
