@@ -5,10 +5,19 @@ import {
   ref,
   push,
   set,
+  update,
+  remove,
   get,
   onValue,
   type Database,
 } from 'firebase/database';
+
+// Shares older than this are deleted the next time anyone opens them, so abandoned/forgotten
+// links don't accumulate in the database forever. Saved Plans already prunes its own local
+// reference to a share after 2 weeks (ARCHIVE_TTL_MS); this is a longer, server-side backstop —
+// long enough that an actively-used link (e.g. reused across a multi-week season) won't expire
+// out from under people still relying on it.
+const SHARE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 declare global {
   interface Window {
@@ -62,19 +71,32 @@ export function createShare(payload: unknown): string | null {
   const database = getDb();
   if (!database) return null;
   const newRef = push(ref(database, 'shares'));
-  set(newRef, payload);
+  set(newRef, { ...(payload as object), createdAt: Date.now() });
   return newRef.key;
 }
 
 export function updateShare(shareId: string, payload: unknown): void {
   const database = getDb();
   if (!database) return;
-  set(ref(database, `shares/${shareId}`), payload);
+  // Partial update (not set) so it never clobbers the original createdAt timestamp.
+  update(ref(database, `shares/${shareId}`), payload as object);
 }
 
-export async function fetchShare(shareId: string): Promise<unknown | null> {
+export type FetchShareResult =
+  | { status: 'ok'; data: any }
+  | { status: 'expired' }
+  | { status: 'not_found' };
+
+export async function fetchShare(shareId: string): Promise<FetchShareResult> {
   const database = getDb();
-  if (!database) return null;
-  const snapshot = await get(ref(database, `shares/${shareId}`));
-  return snapshot.val();
+  if (!database) return { status: 'not_found' };
+  const shareRef = ref(database, `shares/${shareId}`);
+  const snapshot = await get(shareRef);
+  const data = snapshot.val();
+  if (!data) return { status: 'not_found' };
+  if (data.createdAt && Date.now() - data.createdAt > SHARE_TTL_MS) {
+    remove(shareRef).catch(() => {});
+    return { status: 'expired' };
+  }
+  return { status: 'ok', data };
 }

@@ -104,6 +104,7 @@ function BadmintonPlanner() {
     isConfirmed,
     pendingOverwrite,
     loadedPlanId,
+    shareNotice,
   } = state;
 
   const totalSlots = Math.floor(totalMinutes / gameMinutes);
@@ -171,10 +172,12 @@ function BadmintonPlanner() {
 
     if (urlShareId && isFirebaseConfigured()) {
       fetchShare(urlShareId)
-        .then(data => {
-          if (data?.v === 1 && data.p && data.slots) {
-            applySharePayload(data, urlShareId);
+        .then(result => {
+          if (result.status === 'ok' && result.data?.v === 1 && result.data.p && result.data.slots) {
+            applySharePayload(result.data, urlShareId);
             patchState({ shareId: urlShareId, isSharedSession: true });
+          } else if (result.status === 'expired') {
+            patchState({ shareNotice: 'expired' });
           }
         })
         .catch(() => {})
@@ -217,8 +220,12 @@ function BadmintonPlanner() {
     // content is deliberately excluded from localStorage.
     if (isSharedSession && shareId && isFirebaseConfigured()) {
       fetchShare(shareId)
-        .then(data => {
-          if (data?.v === 1 && data.p && data.slots) applySharePayload(data, shareId);
+        .then(result => {
+          if (result.status === 'ok' && result.data?.v === 1 && result.data.p && result.data.slots) {
+            applySharePayload(result.data, shareId);
+          } else if (result.status === 'expired') {
+            patchState({ shareNotice: 'expired', shareId: null, isSharedSession: false });
+          }
         })
         .catch(() => {});
     }
@@ -878,6 +885,13 @@ function BadmintonPlanner() {
             )}
           </div>
         </div>
+
+        {shareNotice === 'expired' && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 16, background: C.card, border: `1px solid ${C.amber}33`, borderRadius: 8, padding: '10px 14px' }}>
+            <span style={{ fontSize: 12, color: C.amber }}>⚡ This share link has expired (older than 30 days) and was removed.</span>
+            <button onClick={() => patchState({ shareNotice: null })} style={{ background: 'none', border: 'none', color: C.textMuted, fontSize: 16, padding: 0 }}>×</button>
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
           {[['schedule', 'Schedule'], ['archive', `Saved Plans${savedPlans.length ? ` (${savedPlans.length})` : ''}`], ['about', 'How It Works']].map(([val, label]) => (

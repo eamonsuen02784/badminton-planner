@@ -109,6 +109,7 @@ export interface PlannerState {
   preferMixedTeams: boolean;
   isConfirmed: boolean;
   pendingOverwrite: 'generate' | 'clear' | 'import' | 'regenerateRemaining' | null;
+  shareNotice: 'expired' | null;
   loadedPlanId: number | null;
 }
 

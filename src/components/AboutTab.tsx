@@ -128,6 +128,8 @@ export default function AboutTab() {
         <Row label="Saved automatically">Opening a share link also adds it to that device's own Saved Plans
           (as "Shared schedule"), so you can find it again later without needing the link. Reopening the same
           link updates that same entry rather than piling up duplicates.</Row>
+        <Row label="Expiry">Links older than 30 days get cleaned up the next time anyone opens them, so
+          forgotten links don't pile up forever.</Row>
         <Row label="Edit access">Viewing a shared link never requires anything. Actually editing it still
           needs the admin PIN, same as editing locally.</Row>
       </Section>

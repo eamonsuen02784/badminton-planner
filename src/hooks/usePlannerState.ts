@@ -96,6 +96,7 @@ function createInitialState(): PlannerState {
     preferMixedTeams: loadState(STORAGE_KEYS.preferMixedTeams, false),
     isConfirmed: loadState(STORAGE_KEYS.isConfirmed, false),
     pendingOverwrite: null,
+    shareNotice: null,
     loadedPlanId: loadState(STORAGE_KEYS.loadedPlanId, null),
   };
 }

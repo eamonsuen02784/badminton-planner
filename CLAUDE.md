@@ -153,7 +153,16 @@ Sharing went through a few iterations during development; here's the model that 
   any request that doesn't come from the real deployed page, so a stray script or `curl` call
   against the public `databaseURL` can't read or write the database even though that config is
   visible in the page source (Firebase web config is meant to be public; App Check + rules are
-  the actual access control).
+  the actual access control). Note that App Check enforcement also blocks server-side/`curl`
+  inspection of the database — even for maintenance — so database housekeeping requires either
+  the Firebase Console or a service-account credential, not direct REST calls.
+- **Expiry**: each share is stamped with `createdAt` on creation (preserved across `Save`
+  updates via a partial `update()`, never a full `set()`). The next time *anyone* opens a share
+  older than `SHARE_TTL_MS` (30 days, in `src/firebase.ts`), it's deleted server-side and the
+  opener sees an "this link has expired" notice instead. This is a client-triggered backstop,
+  not a scheduled job — a share that's never reopened won't get cleaned up on its own, since the
+  database rules don't allow listing `/shares` to scan for stale entries (that would require a
+  Cloud Function on a paid plan, which this project intentionally avoids).
 - A Cloudflare Worker (`workers/share-links/`) and a base64-URL-hash scheme remain as fallbacks
   if Firebase isn't configured (`window.FIREBASE_CONFIG` unset) — neither supports the
   Save-pushes-back behavior, just a one-shot link.
