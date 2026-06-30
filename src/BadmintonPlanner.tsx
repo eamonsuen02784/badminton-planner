@@ -523,7 +523,11 @@ function BadmintonPlanner() {
     if (isLive) {
       const newLiveGames = liveGames.filter(lg => !(lg.slot === slotNum && lg.court === courtIdx));
       const nextSlot = slotNum + 1;
-      if (result && nextSlot <= totalSlots) {
+      // Only auto-regen if the next slot hasn't already started (no live courts there yet).
+      // If a game is already in progress in the next slot, leave it alone — the user can
+      // click Apply manually once everything has settled.
+      const nextSlotStarted = newLiveGames.some(lg => lg.slot === nextSlot);
+      if (result && nextSlot <= totalSlots && !nextSlotStarted) {
         const r = doRegen(nextSlot, undefined, newLiveGames);
         if (r) {
           patchState({ liveGames: newLiveGames, fromSlot: nextSlot, result: r.newResult, scores: r.nextScores, copied: false, isConfirmed: false, loadedPlanId: null });
