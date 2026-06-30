@@ -105,6 +105,7 @@ function BadmintonPlanner() {
     pendingOverwrite,
     loadedPlanId,
     shareNotice,
+    liveGames,
   } = state;
 
   const totalSlots = Math.floor(totalMinutes / gameMinutes);
@@ -259,10 +260,10 @@ function BadmintonPlanner() {
     });
   }, [extraCourt, gameMinutes, numCourts, totalSlots]);
 
-  const getPlayersWithAvailability = useCallback(() => {
+  const applyAvailability = useCallback((basePlayers) => {
     const midSlot = Math.floor(totalSlots / 2);
     const overlap = Math.max(1, Math.floor(totalSlots * 0.2));
-    return players.map(p => {
+    return basePlayers.map(p => {
       let next;
       if (staggerMode === 'none') next = { ...p, availFrom: 0, availTo: totalSlots - 1 };
       else if (staggerMode === 'group') {
@@ -275,7 +276,49 @@ function BadmintonPlanner() {
       if (p.leavesAt != null) next = { ...next, availTo: Math.min(next.availTo, p.leavesAt) };
       return next;
     });
-  }, [players, staggerMode, totalSlots]);
+  }, [staggerMode, totalSlots]);
+
+  const getPlayersWithAvailability = useCallback(() => applyAvailability(players), [applyAvailability, players]);
+
+  // Core regen helper: keeps slots 0..targetFromSlot-2, regenerates targetFromSlot-1 onwards.
+  // Accepts optional overridePlayers (for mid-session availability changes) and
+  // livesToExclude (courts whose players are still on court and must skip the next slot).
+  const doRegen = useCallback((targetFromSlot, overridePlayers, livesToExclude) => {
+    const basePlayers = overridePlayers ?? players;
+    if (basePlayers.length < 4 || !result) return null;
+    const pws = applyAvailability(basePlayers).map(p => ({ ...p, skill: computeSkill(p.name) }));
+    const keptSlots = result.schedule.slice(0, targetFromSlot - 1);
+    const stateSnapshot = extractState(keptSlots, pws);
+    const courtsArr = getCourtsPerSlot();
+    if (fromSlotCourts > 0) {
+      for (let i = targetFromSlot - 1; i < totalSlots; i++) courtsArr[i] = fromSlotCourts;
+    }
+    // Exclude players whose court is still live from the immediately upcoming slot
+    const liveList = livesToExclude ?? liveGames;
+    const liveAtPrev = liveList.filter(lg => lg.slot === targetFromSlot - 1);
+    let forcedFirstSlot = null;
+    if (liveAtPrev.length > 0) {
+      const liveNames = new Set(
+        liveAtPrev.flatMap(lg => {
+          const slotResult = result.schedule.find(s => s.slot === lg.slot);
+          const court = slotResult?.courts[lg.court];
+          return court ? [...court.teamA, ...court.teamB].map(p => p.name) : [];
+        })
+      );
+      forcedFirstSlot = pws
+        .map((p, i) => ({ name: p.name, i }))
+        .filter(({ name }) => !liveNames.has(name))
+        .map(({ i }) => i);
+    }
+    const newResult = generateSchedule(pws, totalSlots, courtsArr, targetFromSlot - 1, stateSnapshot, forcedFirstSlot, { preferMixedTeams });
+    if (!newResult) return null;
+    const nextScores = {};
+    for (const key in scores) {
+      const match = key.match(/^s(\d+)c/);
+      if (match && parseInt(match[1]) < targetFromSlot) nextScores[key] = scores[key];
+    }
+    return { newResult, nextScores };
+  }, [applyAvailability, computeSkill, fromSlotCourts, getCourtsPerSlot, liveGames, players, preferMixedTeams, result, scores, totalSlots]);
 
   const buildSharePayload = useCallback(() => {
     if (!result) return null;
@@ -432,7 +475,7 @@ function BadmintonPlanner() {
 
   const runGenerate = useCallback(() => {
     if (players.length < 4 || isGenerating) return;
-    patchState({ isGenerating: true, result: null, scores: {}, copied: false, genSlot: 0, isConfirmed: false, loadedPlanId: null });
+    patchState({ isGenerating: true, result: null, scores: {}, copied: false, genSlot: 0, isConfirmed: false, loadedPlanId: null, liveGames: [], fromSlot: 1 });
     const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
     const gen = generateScheduleGen(playersWithSkill, totalSlots, getCourtsPerSlot(), 0, null, null, { preferMixedTeams });
     let lastValue = null;
@@ -459,22 +502,10 @@ function BadmintonPlanner() {
 
   const runRegenerateRemaining = useCallback(() => {
     if (players.length < 4 || !result) return;
-    const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
-    const keptSlots = result.schedule.slice(0, fromSlot - 1);
-    const stateSnapshot = extractState(keptSlots, playersWithSkill);
-    const courtsArr = getCourtsPerSlot();
-    if (fromSlotCourts > 0) {
-      for (let i = fromSlot - 1; i < totalSlots; i++) courtsArr[i] = fromSlotCourts;
-    }
-    const newResult = generateSchedule(playersWithSkill, totalSlots, courtsArr, fromSlot - 1, stateSnapshot, null, { preferMixedTeams });
-    if (!newResult) return;
-    const nextScores = {};
-    for (const key in scores) {
-      const match = key.match(/^s(\d+)c/);
-      if (match && parseInt(match[1]) < fromSlot) nextScores[key] = scores[key];
-    }
-    patchState({ result: newResult, scores: nextScores, copied: false, isConfirmed: false, loadedPlanId: null });
-  }, [computeSkill, fromSlot, fromSlotCourts, getCourtsPerSlot, getPlayersWithAvailability, players.length, preferMixedTeams, result, scores, totalSlots]);
+    const r = doRegen(fromSlot);
+    if (!r) return;
+    patchState({ result: r.newResult, scores: r.nextScores, copied: false, isConfirmed: false, loadedPlanId: null });
+  }, [doRegen, fromSlot, players.length, result]);
 
   const regenerateRemaining = useCallback(() => {
     if (players.length < 4 || !result) return;
@@ -485,8 +516,58 @@ function BadmintonPlanner() {
     runRegenerateRemaining();
   }, [isConfirmed, players.length, result, runRegenerateRemaining]);
 
+  // Toggle a court's "live" state. Marking live locks those players out of the next regen.
+  // Marking as Done auto-regens the next slot with the newly freed players added back.
+  const toggleLiveGame = useCallback((slotNum, courtIdx) => {
+    const isLive = liveGames.some(lg => lg.slot === slotNum && lg.court === courtIdx);
+    if (isLive) {
+      const newLiveGames = liveGames.filter(lg => !(lg.slot === slotNum && lg.court === courtIdx));
+      const nextSlot = slotNum + 1;
+      if (result && nextSlot <= totalSlots) {
+        const r = doRegen(nextSlot, undefined, newLiveGames);
+        if (r) {
+          patchState({ liveGames: newLiveGames, fromSlot: nextSlot, result: r.newResult, scores: r.nextScores, copied: false, isConfirmed: false, loadedPlanId: null });
+          return;
+        }
+      }
+      patchState({ liveGames: newLiveGames, fromSlot: Math.min(nextSlot, totalSlots) });
+    } else {
+      patchState({ liveGames: [...liveGames, { slot: slotNum, court: courtIdx }] });
+    }
+  }, [doRegen, liveGames, result, totalSlots]);
+
+  // Mark a player as having just arrived — sets their availFrom to the next regen slot
+  // and immediately regens so they appear in upcoming rounds. Only works in 'custom' mode.
+  const setPlayerJoining = useCallback((idx) => {
+    if (staggerMode !== 'custom') return;
+    const updatedPlayers = players.map((p, i) => i === idx ? { ...p, availFrom: fromSlot - 1 } : p);
+    const r = doRegen(fromSlot, updatedPlayers);
+    patchState({
+      players: updatedPlayers,
+      ...(r ? { result: r.newResult, scores: r.nextScores, copied: false, isConfirmed: false, loadedPlanId: null } : {}),
+    });
+  }, [doRegen, fromSlot, players, staggerMode]);
+
+  // Mark a player as done for today — sets leavesAt to end of the current round
+  // and immediately regens to remove them from upcoming slots.
+  const setPlayerLeaving = useCallback((idx) => {
+    const leavingAtIdx = fromSlot - 2; // 0-based: last slot index they play
+    if (leavingAtIdx < 0) return;
+    const updatedPlayers = players.map((p, i) => i === idx ? { ...p, leavesAt: leavingAtIdx } : p);
+    const r = doRegen(fromSlot, updatedPlayers);
+    patchState({
+      players: updatedPlayers,
+      ...(r ? { result: r.newResult, scores: r.nextScores, copied: false, isConfirmed: false, loadedPlanId: null } : {}),
+    });
+  }, [doRegen, fromSlot, players]);
+
+  // Undo a departure — clears leavesAt so the player is back in the pool on next regen.
+  const setPlayerBack = useCallback((idx) => {
+    patchState({ players: players.map((p, i) => i === idx ? { ...p, leavesAt: null } : p) });
+  }, [players]);
+
   const runClearSchedule = useCallback(() => {
-    patchState({ result: null, scores: {}, fromSlot: 1, isConfirmed: false, loadedPlanId: null });
+    patchState({ result: null, scores: {}, fromSlot: 1, isConfirmed: false, loadedPlanId: null, liveGames: [] });
   }, []);
 
   const clearSchedule = useCallback(() => {
@@ -1068,6 +1149,37 @@ function BadmintonPlanner() {
           </div>
         )}
 
+        {result && fromSlot > 1 && (
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700 }}>Session Status</span>
+              <span style={{ fontSize: 11, color: C.textMuted }}>After round {fromSlot - 1} · next: {Math.min(fromSlot, totalSlots)}</span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {players.map((p, idx) => {
+                const nextSlotIdx = fromSlot - 1; // 0-based index of next slot to generate
+                const departed = p.leavesAt != null && p.leavesAt < nextSlotIdx;
+                const notArrived = staggerMode === 'custom' && p.availFrom > nextSlotIdx;
+                const isHere = !departed && !notArrived;
+                return (
+                  <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 4, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '4px 8px', opacity: departed || notArrived ? 0.55 : 1 }}>
+                    <span style={{ color: p.gender === 'F' ? C.pink : C.accent, fontWeight: 600, fontSize: 12 }}>{p.name}</span>
+                    {departed && (
+                      <button onClick={() => setPlayerBack(idx)} title="Restore — include in upcoming rounds" style={{ fontSize: 10, color: C.textMuted, background: 'none', border: `1px solid ${C.border}`, borderRadius: 4, padding: '1px 5px', cursor: 'pointer', fontFamily: FONT }}>↩</button>
+                    )}
+                    {notArrived && (
+                      <button onClick={() => setPlayerJoining(idx)} title="Mark as arrived — joins next round" style={{ fontSize: 10, color: C.accent, background: 'none', border: `1px solid ${C.accentDim}`, borderRadius: 4, padding: '1px 5px', cursor: 'pointer', fontFamily: FONT }}>Here now</button>
+                    )}
+                    {isHere && p.leavesAt == null && fromSlot > 1 && (
+                      <button onClick={() => setPlayerLeaving(idx)} title="Mark as done for today — removes from upcoming rounds" style={{ fontSize: 10, color: C.textMuted, background: 'none', border: `1px solid ${C.border}`, borderRadius: 4, padding: '1px 5px', cursor: 'pointer', fontFamily: FONT }}>Done ↗</button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {saved && <p style={{ fontSize: 12, color: C.green, textAlign: 'center', marginTop: -16, marginBottom: 16 }}>Schedule saved — will persist on refresh</p>}
 
         {result && (
@@ -1088,6 +1200,8 @@ function BadmintonPlanner() {
             cancelSlotEdit={() => patchState({ editingSlot: null, editLayout: null })}
             assignToPosition={assignToPosition}
             updateScore={updateScore}
+            liveGames={liveGames}
+            onToggleLive={toggleLiveGame}
           />
         )}
         </>
