@@ -14,8 +14,6 @@ export default function SlotCard({
   cancelSlotEdit,
   assignToPosition,
   updateScore,
-  liveGames,
-  onToggleLive,
 }) {
   const slotPicker = (pos, currentName, genderByName, allNames) => {
     const g = genderByName.get(currentName);
@@ -94,21 +92,12 @@ export default function SlotCard({
         );
       })()}
 
-      {!editing && slot.courts.map((court, ci) => {
-        const isLive = liveGames?.some(lg => lg.slot === slot.slot && lg.court === ci);
-        return (
-        <div key={ci} style={{ background: COURT_BG[ci], borderLeft: `3px solid ${isLive ? '#ef4444' : COURT_COLORS[ci]}`, borderRadius: 6, padding: '8px 10px', marginBottom: ci < slot.courts.length - 1 ? 6 : 0 }}>
-          {(slot.courts.length > 1 || slot.repeatedCourts?.includes(ci) || onToggleLive) && (
+      {!editing && slot.courts.map((court, ci) => (
+        <div key={ci} style={{ background: COURT_BG[ci], borderLeft: `3px solid ${COURT_COLORS[ci]}`, borderRadius: 6, padding: '8px 10px', marginBottom: ci < slot.courts.length - 1 ? 6 : 0 }}>
+          {(slot.courts.length > 1 || slot.repeatedCourts?.includes(ci)) && (
             <div style={{ fontSize: 10, fontWeight: 700, marginBottom: 4, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>
-              {slot.courts.length > 1 && <span style={{ color: isLive ? '#ef4444' : COURT_COLORS[ci] }}>Court {court.court}</span>}
+              {slot.courts.length > 1 && <span style={{ color: COURT_COLORS[ci] }}>Court {court.court}</span>}
               {slot.repeatedCourts?.includes(ci) && <span style={{ color: C.amber }}>⚠ repeat group</span>}
-              {isLive && <span style={{ color: '#ef4444' }}>● LIVE</span>}
-              <div style={{ flex: 1 }} />
-              {onToggleLive && (
-                <button onClick={() => onToggleLive(slot.slot, ci)} title={isLive ? 'Mark game as finished — frees players for next round' : 'Mark game as still in progress — locks players out of next round'} style={{ background: isLive ? '#ef4444' : 'none', color: isLive ? '#fff' : C.textMuted, border: `1px solid ${isLive ? '#ef4444' : C.border}`, borderRadius: 4, padding: '2px 8px', fontSize: 10, fontWeight: 700, fontFamily: FONT, cursor: 'pointer', lineHeight: 1.4 }}>
-                  {isLive ? '✓ Done' : 'Live'}
-                </button>
-              )}
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
@@ -156,8 +145,7 @@ export default function SlotCard({
             );
           })()}
         </div>
-        );
-      })}
+      ))}
 
       {slot.courts.length === 0 && <div style={{ textAlign: 'center', padding: 10, color: C.textMuted, fontSize: 12 }}>Not enough players</div>}
 

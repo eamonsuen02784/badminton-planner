@@ -19,8 +19,6 @@ export default function ScheduleGrid({
   cancelSlotEdit,
   assignToPosition,
   updateScore,
-  liveGames,
-  onToggleLive,
 }) {
   return (
     <div ref={scheduleRef} style={{ background: C.bg, padding: 16, borderRadius: 12 }}>
@@ -69,8 +67,6 @@ export default function ScheduleGrid({
             cancelSlotEdit={cancelSlotEdit}
             assignToPosition={assignToPosition}
             updateScore={updateScore}
-            liveGames={liveGames}
-            onToggleLive={onToggleLive}
           />
         ))}
       </div>

@@ -111,7 +111,6 @@ export interface PlannerState {
   pendingOverwrite: 'generate' | 'clear' | 'import' | 'regenerateRemaining' | null;
   shareNotice: 'expired' | null;
   loadedPlanId: number | null;
-  liveGames: Array<{ slot: number; court: number }>;
 }
 
 export interface PlannerPersistedState {

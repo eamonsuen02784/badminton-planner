@@ -98,7 +98,6 @@ function createInitialState(): PlannerState {
     pendingOverwrite: null,
     shareNotice: null,
     loadedPlanId: loadState(STORAGE_KEYS.loadedPlanId, null),
-    liveGames: [],
   };
 }
 
