@@ -516,29 +516,120 @@ function BadmintonPlanner() {
     runRegenerateRemaining();
   }, [isConfirmed, players.length, result, runRegenerateRemaining]);
 
+  // Regen the next slot intelligently:
+  // - Courts already marked live in that slot → keep their matchups unchanged (game in progress)
+  // - Remaining courts → regenerate with newly freed players
+  // - All courts locked → nothing to regen, return null
+  const partialRegenNextSlot = useCallback((nextSlot, newLiveGames) => {
+    if (!result) return null;
+    const existingSlot = result.schedule.find(s => s.slot === nextSlot);
+    if (!existingSlot) return null;
+
+    const lockedCourtIdxs = newLiveGames
+      .filter(lg => lg.slot === nextSlot)
+      .map(lg => lg.court)
+      .filter(ci => ci < existingSlot.courts.length);
+
+    if (lockedCourtIdxs.length === 0) return doRegen(nextSlot, undefined, newLiveGames);
+
+    const unlockedCount = existingSlot.courts.length - lockedCourtIdxs.length;
+    if (unlockedCount === 0) return null; // every court is already running
+
+    // Players whose court is already live in nextSlot — they're playing, exclude from regen pool
+    const lockedPlayerNames = new Set(
+      lockedCourtIdxs.flatMap(ci => {
+        const court = existingSlot.courts[ci];
+        return court ? [...court.teamA, ...court.teamB].map(p => p.name) : [];
+      })
+    );
+    // Players still finishing the previous slot's live games
+    const prevLiveNames = new Set(
+      newLiveGames
+        .filter(lg => lg.slot === nextSlot - 1)
+        .flatMap(lg => {
+          const s = result.schedule.find(sl => sl.slot === lg.slot);
+          const c = s?.courts[lg.court];
+          return c ? [...c.teamA, ...c.teamB].map(p => p.name) : [];
+        })
+    );
+
+    const allExcluded = new Set([...lockedPlayerNames, ...prevLiveNames]);
+    const pws = applyAvailability(players).map(p => ({ ...p, skill: computeSkill(p.name) }));
+    const forcedFirstSlot = pws
+      .map((p, i) => ({ name: p.name, i }))
+      .filter(({ name }) => !allExcluded.has(name))
+      .map(({ i }) => i);
+
+    const keptSlots = result.schedule.slice(0, nextSlot - 1);
+    const stateSnapshot = extractState(keptSlots, pws);
+    const courtsArr = getCourtsPerSlot();
+    courtsArr[nextSlot - 1] = unlockedCount; // only generate the unlocked courts for this slot
+    if (fromSlotCourts > 0) {
+      for (let i = nextSlot; i < totalSlots; i++) courtsArr[i] = fromSlotCourts;
+    }
+
+    const genResult = generateSchedule(pws, totalSlots, courtsArr, nextSlot - 1, stateSnapshot, forcedFirstSlot, { preferMixedTeams });
+    if (!genResult) return null;
+
+    const genSlot = genResult.schedule.find(s => s.slot === nextSlot);
+    if (!genSlot) return null;
+
+    // Splice locked courts back at their original positions, fill gaps with generated courts
+    const mergedCourts = [];
+    let genIdx = 0;
+    for (let ci = 0; ci < existingSlot.courts.length; ci++) {
+      if (lockedCourtIdxs.includes(ci)) {
+        mergedCourts.push({ ...existingSlot.courts[ci], court: ci + 1 });
+      } else if (genIdx < genSlot.courts.length) {
+        mergedCourts.push({ ...genSlot.courts[genIdx++], court: ci + 1 });
+      }
+    }
+
+    const playingNames = new Set(mergedCourts.flatMap(c => [...c.teamA, ...c.teamB].map(p => p.name)));
+    // Sitting = whoever the scheduler rested, minus locked/prevLive players (they're not "available to sit")
+    const mergedSitting = genSlot.sitting.filter(
+      p => !lockedPlayerNames.has(p.name) && !prevLiveNames.has(p.name) && !playingNames.has(p.name)
+    );
+
+    const mergedSchedule = genResult.schedule.map(slot =>
+      slot.slot === nextSlot ? { ...slot, courts: mergedCourts, sitting: mergedSitting } : slot
+    );
+
+    // Recompute all per-slot stats from the merged schedule (game counts, streaks, playerState)
+    const { schedule: finalSchedule, gamesPlayed } = recomputeStats(mergedSchedule, players);
+
+    const nextScores = {};
+    for (const key in scores) {
+      const match = key.match(/^s(\d+)c/);
+      if (match && parseInt(match[1]) < nextSlot) nextScores[key] = scores[key];
+    }
+    return { newResult: { schedule: finalSchedule, gamesPlayed }, nextScores };
+  }, [applyAvailability, computeSkill, doRegen, fromSlotCourts, getCourtsPerSlot, players, preferMixedTeams, result, scores, totalSlots]);
+
   // Toggle a court's "live" state. Marking live locks those players out of the next regen.
-  // Marking as Done auto-regens the next slot with the newly freed players added back.
+  // Marking as Done auto-regens the next slot, keeping any already-live courts there intact.
   const toggleLiveGame = useCallback((slotNum, courtIdx) => {
     const isLive = liveGames.some(lg => lg.slot === slotNum && lg.court === courtIdx);
     if (isLive) {
       const newLiveGames = liveGames.filter(lg => !(lg.slot === slotNum && lg.court === courtIdx));
       const nextSlot = slotNum + 1;
-      // Only auto-regen if the next slot hasn't already started (no live courts there yet).
-      // If a game is already in progress in the next slot, leave it alone — the user can
-      // click Apply manually once everything has settled.
-      const nextSlotStarted = newLiveGames.some(lg => lg.slot === nextSlot);
-      if (result && nextSlot <= totalSlots && !nextSlotStarted) {
-        const r = doRegen(nextSlot, undefined, newLiveGames);
-        if (r) {
-          patchState({ liveGames: newLiveGames, fromSlot: nextSlot, result: r.newResult, scores: r.nextScores, copied: false, isConfirmed: false, loadedPlanId: null });
-          return;
+      if (result && nextSlot <= totalSlots) {
+        const existingNextSlot = result.schedule.find(s => s.slot === nextSlot);
+        const nextLocked = newLiveGames.filter(lg => lg.slot === nextSlot);
+        const allLocked = existingNextSlot && nextLocked.length >= existingNextSlot.courts.length;
+        if (!allLocked) {
+          const r = partialRegenNextSlot(nextSlot, newLiveGames);
+          if (r) {
+            patchState({ liveGames: newLiveGames, fromSlot: nextSlot, result: r.newResult, scores: r.nextScores, copied: false, isConfirmed: false, loadedPlanId: null });
+            return;
+          }
         }
       }
       patchState({ liveGames: newLiveGames, fromSlot: Math.min(nextSlot, totalSlots) });
     } else {
       patchState({ liveGames: [...liveGames, { slot: slotNum, court: courtIdx }] });
     }
-  }, [doRegen, liveGames, result, totalSlots]);
+  }, [liveGames, partialRegenNextSlot, result, totalSlots]);
 
   // Mark a player as having just arrived — sets their availFrom to the next regen slot
   // and immediately regens so they appear in upcoming rounds. Only works in 'custom' mode.
