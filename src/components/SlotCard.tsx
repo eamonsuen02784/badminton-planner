@@ -16,6 +16,7 @@ export default function SlotCard({
   updateScore,
   liveGames,
   onToggleLive,
+  blockedPlayerNames,
 }) {
   const slotPicker = (pos, currentName, genderByName, allNames) => {
     const g = genderByName.get(currentName);
@@ -113,19 +114,25 @@ export default function SlotCard({
           )}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
             <div style={{ textAlign: 'center' }}>
-              {court.teamA.map((p, pi) => (
-                <span key={pi} style={{ color: p.gender === 'F' ? C.pink : C.accent, fontSize: 15, fontWeight: 600 }}>
-                  {p.name}{pi === 0 ? ' · ' : ''}
-                </span>
-              ))}
+              {court.teamA.map((p, pi) => {
+                const blocked = blockedPlayerNames?.has(p.name);
+                return (
+                  <span key={pi} style={{ color: blocked ? C.amber : (p.gender === 'F' ? C.pink : C.accent), fontSize: 15, fontWeight: 600 }}>
+                    {p.name}{blocked ? ' ⏳' : ''}{pi === 0 ? ' · ' : ''}
+                  </span>
+                );
+              })}
             </div>
             <span style={{ color: C.textMuted, fontSize: 11, fontWeight: 700 }}>VS</span>
             <div style={{ textAlign: 'center' }}>
-              {court.teamB.map((p, pi) => (
-                <span key={pi} style={{ color: p.gender === 'F' ? C.pink : C.accent, fontSize: 15, fontWeight: 600 }}>
-                  {p.name}{pi === 0 ? ' · ' : ''}
-                </span>
-              ))}
+              {court.teamB.map((p, pi) => {
+                const blocked = blockedPlayerNames?.has(p.name);
+                return (
+                  <span key={pi} style={{ color: blocked ? C.amber : (p.gender === 'F' ? C.pink : C.accent), fontSize: 15, fontWeight: 600 }}>
+                    {p.name}{blocked ? ' ⏳' : ''}{pi === 0 ? ' · ' : ''}
+                  </span>
+                );
+              })}
             </div>
           </div>
 

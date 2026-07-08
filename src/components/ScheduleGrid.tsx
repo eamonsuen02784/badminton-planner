@@ -21,6 +21,8 @@ export default function ScheduleGrid({
   updateScore,
   liveGames,
   onToggleLive,
+  blockedPlayerNames,
+  fromSlot,
 }) {
   return (
     <div ref={scheduleRef} style={{ background: C.bg, padding: 16, borderRadius: 12 }}>
@@ -71,6 +73,7 @@ export default function ScheduleGrid({
             updateScore={updateScore}
             liveGames={liveGames}
             onToggleLive={onToggleLive}
+            blockedPlayerNames={slot.slot === fromSlot ? blockedPlayerNames : undefined}
           />
         ))}
       </div>

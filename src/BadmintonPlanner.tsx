@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { generateSchedule, generateScheduleGen, extractState, recomputeStats } from './algorithm/scheduler';
 import { ARCHIVE_TTL_MS, C, DEFAULT_PLAYERS, FONT } from './constants';
 import { usePlannerState } from './hooks/usePlannerState';
@@ -503,170 +503,41 @@ function BadmintonPlanner() {
   const confirmSchedule = useCallback(() => patchState({ isConfirmed: true }), []);
   const unconfirmSchedule = useCallback(() => patchState({ isConfirmed: false }), []);
 
-  // Core regen helper: regenerates from targetFromSlot (1-based) onwards.
-  // livesToExclude overrides liveGames for the live-exclusion check (pass newLiveGames
-  // from toggleLiveGame so the just-Done game is already removed).
-  // overridePlayers lets caller pass a pre-modified player list without a state round-trip.
-  const doRegen = useCallback((targetFromSlot, overridePlayers, livesToExclude) => {
+  // Regen helper for session-status handlers (late arrivals / early departures).
+  // overridePlayers lets the caller pass a pre-modified player list so the new
+  // availability takes effect without waiting for a state round-trip.
+  const doRegen = useCallback((targetFromSlot, overridePlayers) => {
     if (!result) return null;
-    const currentLive = livesToExclude ?? liveGames;
     const basePlayers = overridePlayers ?? players;
     const playersWithSkill = applyAvailability(basePlayers).map(p => ({ ...p, skill: computeSkill(p.name) }));
     const keptSlots = result.schedule.slice(0, targetFromSlot - 1);
     const stateSnapshot = extractState(keptSlots, playersWithSkill);
     const courtsArr = getCourtsPerSlot();
-
-    // Exclude any players still live in the slot just before targetFromSlot
-    const prevSlotNum = targetFromSlot - 1;
-    const liveInPrev = currentLive.filter(lg => lg.slot === prevSlotNum);
-    let forcedFirstSlot = null;
-    if (liveInPrev.length > 0) {
-      const liveNames = new Set(
-        liveInPrev.flatMap(lg => {
-          const s = result.schedule.find(r => r.slot === lg.slot);
-          const court = s?.courts[lg.court];
-          if (!court) return [];
-          return [...court.teamA, ...court.teamB].map(p => p.name);
-        })
-      );
-      forcedFirstSlot = playersWithSkill
-        .map((p, i) => (liveNames.has(p.name) ? -1 : i))
-        .filter(i => i >= 0);
-    }
-
-    const newResult = generateSchedule(
-      playersWithSkill, totalSlots, courtsArr, targetFromSlot - 1,
-      stateSnapshot, forcedFirstSlot, { preferMixedTeams }
-    );
+    const newResult = generateSchedule(playersWithSkill, totalSlots, courtsArr, targetFromSlot - 1, stateSnapshot, null, { preferMixedTeams });
     if (!newResult) return null;
-
     const nextScores = {};
     for (const key in scores) {
       const m = key.match(/^s(\d+)c/);
       if (m && parseInt(m[1]) < targetFromSlot) nextScores[key] = scores[key];
     }
     return { newResult, nextScores };
-  }, [applyAvailability, computeSkill, getCourtsPerSlot, liveGames, players, preferMixedTeams, result, scores, totalSlots]);
-
-  // Partial regen: when some courts in nextSlot are already live, keep them and only
-  // regenerate the unlocked courts. Splices results together and reruns recomputeStats.
-  const partialRegenNextSlot = useCallback((nextSlot, newLiveGames) => {
-    if (!result) return null;
-    try {
-      const existingNextSlot = result.schedule.find(s => s.slot === nextSlot);
-      if (!existingNextSlot) return null;
-
-      const lockedCourtIdxs = newLiveGames
-        .filter(lg => lg.slot === nextSlot)
-        .map(lg => lg.court);
-
-      const totalCourts = existingNextSlot.courts.length;
-      const unlockedCount = totalCourts - lockedCourtIdxs.length;
-      if (unlockedCount <= 0) return null;
-
-      // Players we must exclude: those on locked courts in nextSlot, plus players
-      // still finishing a live game in the preceding slot (prevLive).
-      const excludedNames = new Set([
-        ...existingNextSlot.courts
-          .filter((_, ci) => lockedCourtIdxs.includes(ci))
-          .flatMap(c => [...c.teamA, ...c.teamB].map(p => p.name)),
-        ...newLiveGames
-          .filter(lg => lg.slot !== nextSlot)
-          .flatMap(lg => {
-            const s = result.schedule.find(r => r.slot === lg.slot);
-            const court = s?.courts[lg.court];
-            if (!court) return [];
-            return [...court.teamA, ...court.teamB].map(p => p.name);
-          }),
-      ]);
-
-      // Players available for the unlocked courts
-      const filteredPlayers = applyAvailability(players)
-        .map(p => ({ ...p, skill: computeSkill(p.name) }))
-        .filter(p => !excludedNames.has(p.name));
-
-      if (filteredPlayers.length < unlockedCount * 4) return null;
-
-      const keptSlots = result.schedule.slice(0, nextSlot - 1);
-      const stateSnapshot = extractState(keptSlots, filteredPlayers);
-      const courtsArr = getCourtsPerSlot();
-      courtsArr[nextSlot - 1] = unlockedCount;
-
-      const genResult = generateSchedule(
-        filteredPlayers, totalSlots, courtsArr, nextSlot - 1,
-        stateSnapshot, null, { preferMixedTeams }
-      );
-      if (!genResult) return null;
-
-      const genNextSlot = genResult.schedule.find(s => s.slot === nextSlot);
-      if (!genNextSlot || genNextSlot.courts.length < unlockedCount) return null;
-
-      // Splice: restore locked courts at their original indices
-      const mergedCourts = [];
-      let genIdx = 0;
-      for (let ci = 0; ci < totalCourts; ci++) {
-        if (lockedCourtIdxs.includes(ci)) {
-          mergedCourts.push(existingNextSlot.courts[ci]);
-        } else {
-          mergedCourts.push(genNextSlot.courts[genIdx++]);
-        }
-      }
-
-      // Sitting: from the generated slot, minus anyone who slipped in from excluded set
-      const mergedSitting = genNextSlot.sitting.filter(p => !excludedNames.has(p.name));
-
-      const mergedSchedule = result.schedule.map(s =>
-        s.slot === nextSlot ? { ...s, courts: mergedCourts, sitting: mergedSitting } : s
-      );
-
-      const { schedule: finalSchedule, gamesPlayed } = recomputeStats(mergedSchedule, players);
-
-      const nextScores = {};
-      for (const key in scores) {
-        const m = key.match(/^s(\d+)c/);
-        if (m && parseInt(m[1]) < nextSlot) nextScores[key] = scores[key];
-      }
-      return { newResult: { schedule: finalSchedule, gamesPlayed }, nextScores };
-    } catch (e) {
-      console.error('partialRegenNextSlot error:', e);
-      return null;
-    }
   }, [applyAvailability, computeSkill, getCourtsPerSlot, players, preferMixedTeams, result, scores, totalSlots]);
 
+  // Live/Done: no regen — the existing plan stays intact.
+  // Done advances fromSlot once all courts in that slot are finished.
   const toggleLiveGame = useCallback((slotNum, courtIdx) => {
     const isLive = liveGames.some(lg => lg.slot === slotNum && lg.court === courtIdx);
     if (isLive) {
-      // Mark Done: remove from live list, then regen the next slot
       const newLiveGames = liveGames.filter(lg => !(lg.slot === slotNum && lg.court === courtIdx));
-      const nextSlot = slotNum + 1;
-      if (!result || nextSlot > totalSlots) {
-        patchState({ liveGames: newLiveGames });
-        return;
-      }
-      const existingNextSlot = result.schedule.find(s => s.slot === nextSlot);
-      if (!existingNextSlot) {
-        patchState({ liveGames: newLiveGames });
-        return;
-      }
-      // If every court in the next slot is already live, nothing to regen
-      const nextLockedIdxs = newLiveGames.filter(lg => lg.slot === nextSlot).map(lg => lg.court);
-      if (nextLockedIdxs.length >= existingNextSlot.courts.length) {
-        patchState({ liveGames: newLiveGames, fromSlot: nextSlot });
-        return;
-      }
-      // Some (or no) courts in next slot are locked — regen appropriately
-      const r = nextLockedIdxs.length === 0
-        ? doRegen(nextSlot, undefined, newLiveGames)
-        : partialRegenNextSlot(nextSlot, newLiveGames);
-      if (r) {
-        patchState({ liveGames: newLiveGames, fromSlot: nextSlot, result: r.newResult, scores: r.nextScores, copied: false, isConfirmed: false, loadedPlanId: null });
-      } else {
-        patchState({ liveGames: newLiveGames, fromSlot: Math.min(nextSlot, totalSlots) });
-      }
+      const stillLiveInSlot = newLiveGames.some(lg => lg.slot === slotNum);
+      patchState({
+        liveGames: newLiveGames,
+        ...(stillLiveInSlot ? {} : { fromSlot: Math.min(slotNum + 1, totalSlots) }),
+      });
     } else {
       patchState({ liveGames: [...liveGames, { slot: slotNum, court: courtIdx }] });
     }
-  }, [doRegen, liveGames, partialRegenNextSlot, result, totalSlots]);
+  }, [liveGames, totalSlots]);
 
   // Session status handlers — mid-session early departure / late arrival / restore
   const setPlayerLeaving = useCallback((idx) => {
@@ -687,6 +558,18 @@ function BadmintonPlanner() {
   const setPlayerBack = useCallback((idx) => {
     patchState({ players: players.map((p, i) => i === idx ? { ...p, leavesAt: null } : p) });
   }, [players]);
+
+  // Names of all players currently in a live game — used to highlight them in the next slot
+  const blockedPlayerNames = useMemo(() => {
+    if (!result || !liveGames.length) return new Set();
+    const names = new Set();
+    for (const lg of liveGames) {
+      const s = result.schedule.find(r => r.slot === lg.slot);
+      const court = s?.courts[lg.court];
+      if (court) [...court.teamA, ...court.teamB].forEach(p => names.add(p.name));
+    }
+    return names;
+  }, [liveGames, result]);
 
   const executeOverwrite = useCallback(() => {
     if (result && result.schedule?.length) {
@@ -1258,7 +1141,7 @@ function BadmintonPlanner() {
 
         {saved && <p style={{ fontSize: 12, color: C.green, textAlign: 'center', marginTop: -16, marginBottom: 16 }}>Schedule saved — will persist on refresh</p>}
 
-        {result && fromSlot > 1 && (
+        {result && (fromSlot > 1 || liveGames.length > 0) && (
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
             <div style={{ fontSize: 11, color: C.textDim, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
               Session Status · round {fromSlot - 1} done · next: {Math.min(fromSlot, totalSlots)}
@@ -1309,6 +1192,8 @@ function BadmintonPlanner() {
             updateScore={updateScore}
             liveGames={liveGames}
             onToggleLive={toggleLiveGame}
+            blockedPlayerNames={blockedPlayerNames}
+            fromSlot={fromSlot}
           />
         )}
         </>
