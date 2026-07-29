@@ -35,8 +35,8 @@ export const C = {
   shadow: '0 1px 3px rgba(0,0,0,0.55)',
 };
 
-export const COURT_COLORS = ['#7dd3fc', '#a78bfa', '#fb923c'];
-export const COURT_BG = ['rgba(125,211,252,0.07)', 'rgba(167,139,250,0.07)', 'rgba(251,146,60,0.07)'];
+export const COURT_COLORS = ['#7dd3fc', '#a78bfa', '#fb923c', '#4ade80'];
+export const COURT_BG = ['rgba(125,211,252,0.07)', 'rgba(167,139,250,0.07)', 'rgba(251,146,60,0.07)', 'rgba(74,222,128,0.07)'];
 export const FONT = "'Inter', system-ui, sans-serif";
 
 export const ICONS: Record<string, string[]> = {

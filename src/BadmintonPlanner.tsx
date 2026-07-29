@@ -256,7 +256,7 @@ function BadmintonPlanner() {
         const extraEnd = extraCourt.startMin + extraCourt.durationMin;
         if (slotStartMin < extraEnd && slotEndMin > extraCourt.startMin) courts++;
       }
-      return Math.min(courts, 3);
+      return Math.min(courts, 4);
     });
   }, [extraCourt, gameMinutes, numCourts, totalSlots]);
 
@@ -1012,14 +1012,14 @@ function BadmintonPlanner() {
           <div style={{ flex: '0 0 auto' }}>
             <label style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Courts</label>
             <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-              {[1, 2, 3].map(nc => (
+              {[1, 2, 3, 4].map(nc => (
                 <button key={nc} onClick={() => patchState({ numCourts: nc })} style={{ background: numCourts === nc ? C.accentDim : C.card, color: numCourts === nc ? '#fff' : C.textDim, border: `1px solid ${numCourts === nc ? C.accentDim : C.border}`, borderRadius: 6, padding: '8px 14px', fontSize: 14, fontWeight: 600, fontFamily: FONT }}>
                   {nc}
                 </button>
               ))}
             </div>
           </div>
-          {numCourts < 3 && (
+          {numCourts < 4 && (
             <div style={{ flex: '0 0 auto' }}>
               <label style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Extra court</label>
               <div style={{ display: 'flex', gap: 4, marginTop: 4, alignItems: 'center' }}>
