@@ -38,7 +38,8 @@ from shared.http import APIClient
 from shared.state import StateManager
 from shared.telegram import TelegramClient
 
-load_dotenv(Path(__file__).parent.parent.parent / "trip-planner" / ".env")
+load_dotenv(Path(__file__).parent.parent / "investor" / ".env")
+load_dotenv(Path(__file__).parent.parent / "travel_planning" / ".env", override=False)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
@@ -337,15 +338,10 @@ def build_signup_list() -> str:
         day_str = next_wed.strftime("%-d/%-m")
         header = f"Wednesday {day_str} 8:30pm–11:30pm\n"
 
-    # Slots 1–8 guaranteed, 9+ triggers extra court
     lines = []
     for i, name in enumerate(SIGNUP_FIXED, start=1):
         lines.append(f"{i}.     {name}")
-    for i in range(len(SIGNUP_FIXED) + 1, 9):
-        lines.append(f"{i}.")
-    lines.append("---")
-    lines.append("If 9+ we'll book an extra court!")
-    for i in range(9, len(SIGNUP_ROSTER) + 1):
+    for i in range(len(SIGNUP_FIXED) + 1, 17):
         lines.append(f"{i}.")
 
     return header + "\n".join(lines)
