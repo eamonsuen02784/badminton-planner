@@ -239,7 +239,7 @@ export default function PlayerList({
             <Fragment key={`${p.name}-${i}`}>
               {p.gender !== prevGender && (
                 <p style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.5px', margin: idx === 0 ? '0 0 -2px' : '10px 0 -2px' }}>
-                  {p.gender === 'F' ? 'Women' : 'Men'}
+                  {p.gender === 'F' ? 'F' : 'M'}
                 </p>
               )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', boxShadow: C.shadow }}>

@@ -460,24 +460,28 @@ function BadmintonPlanner() {
     runGenerate();
   }, [isConfirmed, isGenerating, players.length, runGenerate]);
 
-  const runRegenerateRemaining = useCallback(() => {
+  const runRegenerateFromSlotWithCourts = useCallback((targetFromSlot, targetCourts) => {
     if (players.length < 4 || !result) return;
     const playersWithSkill = getPlayersWithAvailability().map(p => ({ ...p, skill: computeSkill(p.name) }));
-    const keptSlots = result.schedule.slice(0, fromSlot - 1);
+    const keptSlots = result.schedule.slice(0, targetFromSlot - 1);
     const stateSnapshot = extractState(keptSlots, playersWithSkill);
     const courtsArr = getCourtsPerSlot();
-    if (fromSlotCourts > 0) {
-      for (let i = fromSlot - 1; i < totalSlots; i++) courtsArr[i] = fromSlotCourts;
+    if (targetCourts > 0) {
+      for (let i = targetFromSlot - 1; i < totalSlots; i++) courtsArr[i] = targetCourts;
     }
-    const newResult = generateSchedule(playersWithSkill, totalSlots, courtsArr, fromSlot - 1, stateSnapshot, null, { preferMixedTeams });
+    const newResult = generateSchedule(playersWithSkill, totalSlots, courtsArr, targetFromSlot - 1, stateSnapshot, null, { preferMixedTeams });
     if (!newResult) return;
     const nextScores = {};
     for (const key in scores) {
       const match = key.match(/^s(\d+)c/);
-      if (match && parseInt(match[1]) < fromSlot) nextScores[key] = scores[key];
+      if (match && parseInt(match[1]) < targetFromSlot) nextScores[key] = scores[key];
     }
-    patchState({ result: newResult, scores: nextScores, copied: false, isConfirmed: false, loadedPlanId: null });
-  }, [computeSkill, fromSlot, fromSlotCourts, getCourtsPerSlot, getPlayersWithAvailability, players.length, preferMixedTeams, result, scores, totalSlots]);
+    patchState({ result: newResult, scores: nextScores, copied: false, isConfirmed: false, loadedPlanId: null, fromSlot: targetFromSlot, fromSlotCourts: targetCourts });
+  }, [computeSkill, getCourtsPerSlot, getPlayersWithAvailability, players.length, preferMixedTeams, result, scores, totalSlots]);
+
+  const runRegenerateRemaining = useCallback(() => {
+    runRegenerateFromSlotWithCourts(fromSlot, fromSlotCourts);
+  }, [fromSlot, fromSlotCourts, runRegenerateFromSlotWithCourts]);
 
   const regenerateRemaining = useCallback(() => {
     if (players.length < 4 || !result) return;
@@ -487,6 +491,24 @@ function BadmintonPlanner() {
     }
     runRegenerateRemaining();
   }, [isConfirmed, players.length, result, runRegenerateRemaining]);
+
+  // Inline "+/-" court stepper on a SlotCard: adds/removes a court starting at that
+  // slot and cascading to the end of the session (same semantics as the "Re-generate
+  // from slot" bar), without needing to scroll to that bar and type the slot number.
+  const adjustCourtsAtSlot = useCallback((slotNum, delta) => {
+    if (!result) return;
+    const slotData = result.schedule.find(s => s.slot === slotNum);
+    const current = slotData ? slotData.courts.length : 0;
+    // Never land on 0: fromSlotCourts===0 means "auto" (fall back to the settings-based
+    // count), a different concept from "no courts" — keep the stepper's floor at 1.
+    const next = Math.max(1, Math.min(4, current + delta));
+    if (next === current) return;
+    if (isConfirmed) {
+      patchState({ fromSlot: slotNum, fromSlotCourts: next, pendingOverwrite: 'regenerateRemaining' });
+      return;
+    }
+    runRegenerateFromSlotWithCourts(slotNum, next);
+  }, [isConfirmed, result, runRegenerateFromSlotWithCourts]);
 
   const runClearSchedule = useCallback(() => {
     patchState({ result: null, scores: {}, fromSlot: 1, isConfirmed: false, loadedPlanId: null, liveGames: [] });
@@ -1137,7 +1159,7 @@ function BadmintonPlanner() {
             <input type="number" min={1} max={totalSlots} value={fromSlot} onChange={e => patchState({ fromSlot: Math.min(totalSlots, Math.max(1, +e.target.value)) })} style={{ width: 48, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: '4px 6px', color: C.text, fontSize: 13, fontFamily: FONT, textAlign: 'center' }} />
             <span style={{ fontSize: 12, color: C.textDim }}>with</span>
             <div style={{ display: 'flex', gap: 4 }}>
-              {[0, 1, 2, 3].map(n => (
+              {[0, 1, 2, 3, 4].map(n => (
                 <button key={n} onClick={() => patchState({ fromSlotCourts: n })} style={{ padding: '4px 8px', fontSize: 12, fontWeight: 600, fontFamily: FONT, borderRadius: 4, border: `1px solid ${fromSlotCourts === n ? C.accent : C.border}`, background: fromSlotCourts === n ? C.accentDim : C.bg, color: fromSlotCourts === n ? '#fff' : C.textDim, cursor: 'pointer' }}>{n === 0 ? 'auto' : `${n}C`}</button>
               ))}
             </div>
@@ -1199,6 +1221,7 @@ function BadmintonPlanner() {
             updateScore={updateScore}
             liveGames={liveGames}
             onToggleLive={toggleLiveGame}
+            onAdjustCourts={adjustCourtsAtSlot}
             blockedPlayerNames={blockedPlayerNames}
             fromSlot={fromSlot}
           />

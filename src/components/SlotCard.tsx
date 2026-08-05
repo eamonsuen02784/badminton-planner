@@ -16,8 +16,10 @@ export default function SlotCard({
   updateScore,
   liveGames,
   onToggleLive,
+  onAdjustCourts,
   blockedPlayerNames,
 }) {
+  const stepBtnStyle = { background: 'none', border: `1px solid ${C.border}`, borderRadius: 4, color: C.textMuted, fontSize: 12, fontWeight: 700, fontFamily: FONT, width: 20, height: 20, lineHeight: 1, cursor: 'pointer' };
   const slotPicker = (pos, currentName, genderByName, allNames) => {
     const g = genderByName.get(currentName);
     const color = g === 'F' ? C.pink : C.accent;
@@ -40,6 +42,17 @@ export default function SlotCard({
         <span style={{ fontSize: 13, color: C.textDim, fontWeight: 600 }}>SLOT {slot.slot}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 12, color: C.textMuted }}>{slotTime(slot.slot)}</span>
+          {onAdjustCourts && !editing && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <button onClick={() => onAdjustCourts(slot.slot, -1)} disabled={slot.courts.length <= 1} title="Remove a court, starting this slot through the rest of the session" style={{ ...stepBtnStyle, opacity: slot.courts.length <= 1 ? 0.35 : 1 }}>
+                −
+              </button>
+              <span style={{ fontSize: 11, color: C.textMuted, minWidth: 16, textAlign: 'center' }}>{slot.courts.length}C</span>
+              <button onClick={() => onAdjustCourts(slot.slot, 1)} disabled={slot.courts.length >= 4} title="Add a court, starting this slot through the rest of the session" style={{ ...stepBtnStyle, opacity: slot.courts.length >= 4 ? 0.35 : 1 }}>
+                +
+              </button>
+            </div>
+          )}
           {editing ? (
             <span style={{ fontSize: 11, color: C.amber, fontWeight: 700, textTransform: 'uppercase' }}>Editing</span>
           ) : (

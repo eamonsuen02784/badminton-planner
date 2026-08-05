@@ -21,6 +21,7 @@ export default function ScheduleGrid({
   updateScore,
   liveGames,
   onToggleLive,
+  onAdjustCourts,
   blockedPlayerNames,
   fromSlot,
 }) {
@@ -73,6 +74,7 @@ export default function ScheduleGrid({
             updateScore={updateScore}
             liveGames={liveGames}
             onToggleLive={onToggleLive}
+            onAdjustCourts={onAdjustCourts}
             blockedPlayerNames={slot.slot === fromSlot ? blockedPlayerNames : undefined}
           />
         ))}
