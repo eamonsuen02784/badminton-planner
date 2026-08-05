@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { C, DEFAULT_PLAYERS, FONT } from '../constants';
 
 function SkillDot({ name, winLoss }) {
@@ -48,6 +48,13 @@ export default function PlayerList({
   const [bankGenderInput, setBankGenderInput] = useState('M');
   const currentNames = new Set(players.map(p => p.name.toLowerCase()));
   const bankPlayers = (playerHistory || []).filter(p => !currentNames.has(p.name.toLowerCase()));
+  const sortedIndices = players
+    .map((_, i) => i)
+    .sort((a, b) => {
+      const pa = players[a], pb = players[b];
+      if (pa.gender !== pb.gender) return pa.gender === 'M' ? -1 : 1;
+      return pa.name.localeCompare(pb.name);
+    });
 
   const toggleSelected = (name) => {
     setSelectedBank(prev => {
@@ -225,8 +232,17 @@ export default function PlayerList({
 
       {players.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 20 }}>
-          {players.map((p, i) => (
-            <div key={`${p.name}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', boxShadow: C.shadow }}>
+          {sortedIndices.map((i, idx) => {
+            const p = players[i];
+            const prevGender = idx > 0 ? players[sortedIndices[idx - 1]].gender : null;
+            return (
+            <Fragment key={`${p.name}-${i}`}>
+              {p.gender !== prevGender && (
+                <p style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.5px', margin: idx === 0 ? '0 0 -2px' : '10px 0 -2px' }}>
+                  {p.gender === 'F' ? 'Women' : 'Men'}
+                </p>
+              )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', boxShadow: C.shadow }}>
               {editingNameIdx === i ? (
                 <input autoFocus value={p.name}
                   onChange={e => updatePlayer(i, 'name', e.target.value)}
@@ -316,7 +332,9 @@ export default function PlayerList({
 
               <button onClick={() => removePlayer(i)} style={{ background: 'none', border: 'none', color: C.textMuted, fontSize: 16, padding: 0 }}>×</button>
             </div>
-          ))}
+            </Fragment>
+            );
+          })}
         </div>
       )}
 
