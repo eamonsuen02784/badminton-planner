@@ -33,18 +33,20 @@ jobs:
         with:
           node-version: 20
 
-      - name: Build main
+      - name: Test & build main
         working-directory: site-main
         run: |
           npm ci
+          npm test
           npm run build
 
-      - name: Build beta
+      - name: Test & build beta
         working-directory: site-beta
         env:
           VITE_BETA: 'true'
         run: |
           npm ci
+          npm test
           npx vite build --base=/badminton-planner/beta/ --outDir=dist-beta
 
       - name: Combine into one Pages artifact

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { Fragment, useState } from 'react';
 import { C, DEFAULT_PLAYERS, FONT } from '../constants';
+import { sortPlayerIndicesForDisplay } from '../utils/sortPlayers';
 
 function SkillDot({ name, winLoss }) {
   const wl = winLoss[name];
@@ -48,13 +49,7 @@ export default function PlayerList({
   const [bankGenderInput, setBankGenderInput] = useState('M');
   const currentNames = new Set(players.map(p => p.name.toLowerCase()));
   const bankPlayers = (playerHistory || []).filter(p => !currentNames.has(p.name.toLowerCase()));
-  const sortedIndices = players
-    .map((_, i) => i)
-    .sort((a, b) => {
-      const pa = players[a], pb = players[b];
-      if (pa.gender !== pb.gender) return pa.gender === 'M' ? -1 : 1;
-      return pa.name.localeCompare(pb.name);
-    });
+  const sortedIndices = sortPlayerIndicesForDisplay(players);
 
   const toggleSelected = (name) => {
     setSelectedBank(prev => {

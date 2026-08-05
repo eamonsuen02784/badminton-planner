@@ -400,6 +400,78 @@ describe('slotResult repeatedCourts field', () => {
   });
 });
 
+describe('Forced court count from a mid-session slot onward (per-slot "add court" feature)', () => {
+  // Mirrors what the UI's court stepper does: keep the already-played slots, then
+  // regenerate from a target slot with a courtsPerSlot array whose tail is forced
+  // to a new constant value — see runRegenerateFromSlotWithCourts in BadmintonPlanner.tsx.
+  function regenerateFromWithForcedCourts(players: Player[], totalSlots: number, baseCourts: number, targetFromSlot: number, forcedCourts: number, seed: number) {
+    const rng1 = seededRng(seed);
+    const original = generateSchedule(players, totalSlots, courtsPerSlot(baseCourts, totalSlots), 0, null, null, {}, rng1);
+    expect(original).not.toBeNull();
+
+    const keptSlots = original!.schedule.slice(0, targetFromSlot - 1);
+    const state = extractState(keptSlots, players);
+    const courtsArr = courtsPerSlot(baseCourts, totalSlots);
+    for (let i = targetFromSlot - 1; i < totalSlots; i++) courtsArr[i] = forcedCourts;
+
+    const rng2 = seededRng(seed + 100);
+    const regen = generateSchedule(players, totalSlots, courtsArr, targetFromSlot - 1, state, null, {}, rng2);
+    expect(regen).not.toBeNull();
+    return { original: original!, regen: regen! };
+  }
+
+  it('adding a court from slot 6 onward: slots 1-5 unchanged, slots 6-12 get the extra court', () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const players = makePlayers(16, 0, 12); // enough players to fill up to 4 courts
+      const { original, regen } = regenerateFromWithForcedCourts(players, 12, 1, 6, 2, seed);
+
+      for (let i = 0; i < 5; i++) {
+        expect(regen.schedule[i]!.courts.length, `seed ${seed} slot ${i + 1} should be untouched`).toBe(original.schedule[i]!.courts.length);
+      }
+      for (let i = 5; i < 12; i++) {
+        expect(regen.schedule[i]!.courts.length, `seed ${seed} slot ${i + 1} should have 2 courts`).toBe(2);
+      }
+    }
+  });
+
+  it('removing a court from slot 6 onward: later slots drop back down', () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const players = makePlayers(16, 0, 12);
+      const { original, regen } = regenerateFromWithForcedCourts(players, 12, 2, 6, 1, seed);
+
+      for (let i = 0; i < 5; i++) {
+        expect(regen.schedule[i]!.courts.length, `seed ${seed} slot ${i + 1} should be untouched`).toBe(original.schedule[i]!.courts.length);
+      }
+      for (let i = 5; i < 12; i++) {
+        expect(regen.schedule[i]!.courts.length, `seed ${seed} slot ${i + 1} should have 1 court`).toBe(1);
+      }
+    }
+  });
+
+  it('forcing 4 courts with only 12 players gracefully clamps to 3 courts instead of crashing', () => {
+    // Regression for raising the "Re-generate from slot" cap from 3C to 4C: requesting
+    // more courts than the player pool supports must degrade gracefully, not error.
+    const players = makePlayers(12, 0, 12);
+    const { regen } = regenerateFromWithForcedCourts(players, 12, 1, 6, 4, 1);
+    for (let i = 5; i < 12; i++) {
+      expect(regen.schedule[i]!.courts.length).toBeLessThanOrEqual(3);
+      expect(regen.schedule[i]!.courts.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('forcing 4 courts with 16 players actually uses all 4', () => {
+    const players = makePlayers(16, 0, 8);
+    const { regen } = regenerateFromWithForcedCourts(players, 8, 1, 3, 4, 1);
+    for (let i = 2; i < 8; i++) {
+      expect(regen.schedule[i]!.courts.length).toBe(4);
+      for (const court of regen.schedule[i]!.courts) {
+        expect(court.teamA.length).toBe(2);
+        expect(court.teamB.length).toBe(2);
+      }
+    }
+  });
+});
+
 describe('recomputeStats — single-slot edit without cascading', () => {
   it('leaves untouched slots identical and recomputes stats only from real assignments', () => {
     const players = makePlayers(9, 4, 6);
