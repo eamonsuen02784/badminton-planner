@@ -942,7 +942,14 @@ function BadmintonPlanner() {
 
         <div style={{ marginBottom: 28, borderBottom: `1px solid ${C.border}`, paddingBottom: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Match Planner</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>
+              Match Planner
+              {import.meta.env.VITE_BETA === 'true' && (
+                <span title="This is the beta test site — separate from the live site, but shares its data" style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', color: C.amber, border: `1px solid ${C.amber}`, borderRadius: 4, padding: '2px 6px', verticalAlign: 'middle' }}>
+                  BETA
+                </span>
+              )}
+            </h1>
             <p style={{ color: C.textDim, fontSize: 13, margin: '6px 0 0' }}>
               {Math.floor(totalMinutes / 60)}h{totalMinutes % 60 ? `${totalMinutes % 60}m` : ''} · {totalSlots} slots × {gameMinutes} min · {numCourts} court{numCourts > 1 ? 's' : ''}{extraCourt.enabled ? ` +1 extra (${extraCourt.startMin}–${extraCourt.startMin + extraCourt.durationMin}m)` : ''}
             </p>

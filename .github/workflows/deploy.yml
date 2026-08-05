@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, beta]
 
 permissions:
   contents: read
@@ -17,15 +17,46 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: site-main
+
+      - name: Checkout beta
+        uses: actions/checkout@v4
+        with:
+          ref: beta
+          path: site-beta
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm ci
-      - run: npm run build
+
+      - name: Build main
+        working-directory: site-main
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build beta
+        working-directory: site-beta
+        env:
+          VITE_BETA: 'true'
+        run: |
+          npm ci
+          npx vite build --base=/badminton-planner/beta/ --outDir=dist-beta
+
+      - name: Combine into one Pages artifact
+        run: |
+          mkdir -p combined
+          cp -r site-main/dist/. combined/
+          mkdir -p combined/beta
+          cp -r site-beta/dist-beta/. combined/beta/
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: combined
 
   deploy:
     needs: build
