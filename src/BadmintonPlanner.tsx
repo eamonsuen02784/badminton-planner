@@ -1,8 +1,9 @@
 // @ts-nocheck
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { generateSchedule, generateScheduleGen, extractState, recomputeStats } from './algorithm/scheduler';
-import { ARCHIVE_TTL_MS, C, DEFAULT_PLAYERS, FONT } from './constants';
+import { C, DEFAULT_PLAYERS, FONT } from './constants';
 import { usePlannerState } from './hooks/usePlannerState';
+import { pruneExpiredPlans } from './utils/pruneExpiredPlans';
 import PlayerList from './components/PlayerList';
 import ScheduleGrid from './components/ScheduleGrid';
 import AboutTab from './components/AboutTab';
@@ -125,8 +126,7 @@ function BadmintonPlanner() {
   }, [players]);
 
   useEffect(() => {
-    const cutoff = Date.now() - ARCHIVE_TTL_MS;
-    const fresh = savedPlans.filter(p => new Date(p.savedAt).getTime() >= cutoff);
+    const fresh = pruneExpiredPlans(savedPlans, Date.now());
     if (fresh.length !== savedPlans.length) patchState({ savedPlans: fresh });
   }, [savedPlans]);
 

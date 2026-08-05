@@ -1,0 +1,89 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import PlayerList from './PlayerList';
+
+// Deliberately out of alphabetical/gender order, and with the original array
+// index (used by every handler below) different from the eventual display
+// position — this is the exact regression the sorted-index refactor risks.
+const PLAYERS = [
+  { name: 'Zoe', gender: 'F' },   // index 0
+  { name: 'Bob', gender: 'M' },   // index 1
+  { name: 'Alice', gender: 'F' }, // index 2
+  { name: 'Tom', gender: 'M' },   // index 3
+];
+
+function renderPlayerList(overrides = {}) {
+  const handlers = {
+    setNameInput: vi.fn(),
+    setGenderInput: vi.fn(),
+    addPlayer: vi.fn(),
+    addSelectedFromBank: vi.fn(),
+    addToBank: vi.fn(),
+    removeFromHistory: vi.fn(),
+    loadDefaults: vi.fn(),
+    resetPlayers: vi.fn(),
+    clearPlayers: vi.fn(),
+    clearWinLoss: vi.fn(),
+    updatePlayer: vi.fn(),
+    removePlayer: vi.fn(),
+  };
+  render(
+    <PlayerList
+      players={PLAYERS}
+      playerHistory={[]}
+      winLoss={{}}
+      staggerMode="none"
+      totalSlots={12}
+      nameInput=""
+      genderInput="M"
+      allDefaultsLoaded={true}
+      {...handlers}
+      {...overrides}
+    />
+  );
+  return handlers;
+}
+
+describe('PlayerList — gender-grouped alphabetical display', () => {
+  it('renders players grouped M then F, alphabetical within each group', () => {
+    renderPlayerList();
+    const names = screen.getAllByText(/^(Zoe|Bob|Alice|Tom)$/).map(el => el.textContent);
+    expect(names).toEqual(['Bob', 'Tom', 'Alice', 'Zoe']);
+  });
+
+  it('shows an M group header before an F group header', () => {
+    renderPlayerList();
+    const mHeader = screen.getByText('M');
+    const fHeader = screen.getByText('F');
+    expect(mHeader.compareDocumentPosition(fHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('removing a player by its displayed row calls removePlayer with the ORIGINAL array index, not the display position', async () => {
+    const user = userEvent.setup();
+    const handlers = renderPlayerList();
+
+    // "Zoe" displays last (position 3) but is players[0] — the classic
+    // index-mismatch bug this component's sort refactor could reintroduce.
+    const zoeRow = screen.getByText('Zoe').closest('div');
+    const removeBtn = within(zoeRow).getByRole('button', { name: '×' });
+    await user.click(removeBtn);
+
+    expect(handlers.removePlayer).toHaveBeenCalledWith(0);
+  });
+
+  it('editing a player name targets the original array index', async () => {
+    const user = userEvent.setup();
+    const handlers = renderPlayerList();
+
+    // "Alice" displays 3rd (position 2) but is players[2] in this fixture —
+    // pick "Tom" instead, which displays 2nd (position 1) but is players[3].
+    const tomSpan = screen.getByText('Tom');
+    await user.click(tomSpan);
+    const input = screen.getByDisplayValue('Tom');
+    await user.type(input, '!');
+
+    expect(handlers.updatePlayer).toHaveBeenCalledWith(3, 'name', expect.any(String));
+  });
+});
