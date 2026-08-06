@@ -4,6 +4,13 @@ import { generateSchedule, generateScheduleGen, extractState, recomputeStats } f
 import { C, DEFAULT_PLAYERS, FONT } from './constants';
 import { usePlannerState } from './hooks/usePlannerState';
 import { pruneExpiredPlans } from './utils/pruneExpiredPlans';
+import { isValidBadmintonScore } from './utils/scoreValidation';
+import { computeCourtsPerSlot } from './utils/courtsPerSlot';
+import { applyAvailability as applyAvailabilityUtil } from './utils/availability';
+import { formatSlotTime } from './utils/slotTime';
+import { computeSkill as computeSkillUtil } from './utils/skill';
+import { parseScheduleText as parseScheduleTextUtil, buildCopyText as buildCopyTextUtil } from './utils/scheduleText';
+import { buildSharePayload as buildSharePayloadUtil, reconstructScheduleFromSharePayload, upsertSavedPlanFromShare } from './utils/sharePayload';
 import PlayerList from './components/PlayerList';
 import ScheduleGrid from './components/ScheduleGrid';
 import AboutTab from './components/AboutTab';
@@ -27,16 +34,6 @@ import {
 
 function normalizeApiBase(base) {
   return base ? base.replace(/\/+$/, '') : null;
-}
-
-function isValidBadmintonScore(a, b) {
-  if (a === b || a < 0 || b < 0) return false;
-  const hi = Math.max(a, b);
-  const lo = Math.min(a, b);
-  if (hi === 21 && lo <= 19) return true;
-  if (hi >= 22 && lo >= 20 && hi - lo === 2) return true;
-  if (hi === 30 && lo === 29) return true;
-  return false;
 }
 
 function copyText(text, onCopied) {
@@ -232,83 +229,26 @@ function BadmintonPlanner() {
     }
   }, []);
 
-  const slotTime = useCallback((slotIdx) => {
-    const startMin = (slotIdx - 1) * gameMinutes;
-    const endMin = slotIdx * gameMinutes;
-    if (!sessionStart) return `~${startMin}–${endMin}m`;
-    const [h, m] = sessionStart.split(':').map(Number);
-    const fmt = totalMin => {
-      const d = new Date(2000, 0, 1, h, m + totalMin);
-      const hh = d.getHours();
-      const mm = d.getMinutes();
-      const ampm = hh >= 12 ? 'PM' : 'AM';
-      return `${hh % 12 || 12}:${String(mm).padStart(2, '0')} ${ampm}`;
-    };
-    return `${fmt(startMin)} – ${fmt(endMin)}`;
-  }, [gameMinutes, sessionStart]);
+  const slotTime = useCallback((slotIdx) => formatSlotTime(slotIdx, { gameMinutes, sessionStart }), [gameMinutes, sessionStart]);
 
-  const getCourtsPerSlot = useCallback(() => {
-    return Array.from({ length: totalSlots }, (_, slot) => {
-      const slotStartMin = slot * gameMinutes;
-      const slotEndMin = slotStartMin + gameMinutes;
-      let courts = numCourts;
-      if (extraCourt.enabled) {
-        const extraEnd = extraCourt.startMin + extraCourt.durationMin;
-        if (slotStartMin < extraEnd && slotEndMin > extraCourt.startMin) courts++;
-      }
-      return Math.min(courts, 4);
-    });
-  }, [extraCourt, gameMinutes, numCourts, totalSlots]);
+  const getCourtsPerSlot = useCallback(
+    () => computeCourtsPerSlot({ totalSlots, gameMinutes, numCourts, extraCourt }),
+    [extraCourt, gameMinutes, numCourts, totalSlots]
+  );
 
-  const applyAvailability = useCallback((basePlayers) => {
-    const midSlot = Math.floor(totalSlots / 2);
-    const overlap = Math.max(1, Math.floor(totalSlots * 0.2));
-    return basePlayers.map(p => {
-      let next;
-      if (staggerMode === 'none') next = { ...p, availFrom: 0, availTo: totalSlots - 1 };
-      else if (staggerMode === 'group') {
-        if (p.group === 'early') next = { ...p, availFrom: 0, availTo: midSlot + overlap - 1 };
-        else if (p.group === 'late') next = { ...p, availFrom: midSlot - overlap, availTo: totalSlots - 1 };
-        else next = { ...p, availFrom: 0, availTo: totalSlots - 1 };
-      } else {
-        next = p;
-      }
-      if (p.leavesAt != null) next = { ...next, availTo: Math.min(next.availTo, p.leavesAt) };
-      return next;
-    });
-  }, [staggerMode, totalSlots]);
+  const applyAvailability = useCallback(
+    (basePlayers) => applyAvailabilityUtil(basePlayers, { staggerMode, totalSlots }),
+    [staggerMode, totalSlots]
+  );
 
   const getPlayersWithAvailability = useCallback(() => applyAvailability(players), [applyAvailability, players]);
 
-  const buildSharePayload = useCallback(() => {
-    if (!result) return null;
-    const pwith = getPlayersWithAvailability();
-    return {
-      v: 1,
-      p: pwith.map(p => [p.name, p.gender]),
-      cfg: { g: gameMinutes, c: numCourts },
-      scores: Object.fromEntries(
-        Object.entries(scores)
-          .filter(([, value]) => value?.applied)
-          .map(([key, value]) => [key, { a: value.a, b: value.b }]),
-      ),
-      slots: result.schedule.map(s => ({
-        s: s.slot,
-        c: s.courts.map(court => [
-          court.teamA.map(p => pwith.findIndex(pl => pl.name === p.name)),
-          court.teamB.map(p => pwith.findIndex(pl => pl.name === p.name)),
-        ]),
-        sit: (s.sitting || []).map(p => pwith.findIndex(pl => pl.name === p.name)),
-      })),
-      confirmed: isConfirmed,
-    };
-  }, [gameMinutes, getPlayersWithAvailability, isConfirmed, numCourts, result, scores]);
+  const buildSharePayload = useCallback(
+    () => buildSharePayloadUtil({ result, playersWithAvailability: getPlayersWithAvailability(), gameMinutes, numCourts, scores, isConfirmed }),
+    [gameMinutes, getPlayersWithAvailability, isConfirmed, numCourts, result, scores]
+  );
 
-  const computeSkill = useCallback((name) => {
-    const wl = winLoss[name];
-    if (!wl || wl.wins + wl.losses === 0) return 0.5;
-    return wl.wins / (wl.wins + wl.losses);
-  }, [winLoss]);
+  const computeSkill = useCallback((name) => computeSkillUtil(name, winLoss), [winLoss]);
 
   const loadDefaults = useCallback(() => {
     const existing = new Set(players.map(p => p.name.toLowerCase()));
@@ -386,35 +326,7 @@ function BadmintonPlanner() {
     if (isFirebaseConfigured() && isAdmin) saveWinLoss({});
   }, [isAdmin]);
 
-  const parseScheduleText = useCallback((text) => {
-    const playerMap = Object.fromEntries(players.map(p => [p.name.toLowerCase(), p]));
-    const resolve = name => playerMap[name.toLowerCase()] || { name, gender: '?' };
-    const slots = [];
-    let cur = null;
-    for (const raw of text.split('\n')) {
-      const line = raw.trim();
-      const slotMatch = line.match(/^--- Slot (\d+) .* ---$/);
-      if (slotMatch) {
-        if (cur) slots.push(cur);
-        cur = { slot: +slotMatch[1], courts: [], sitting: [] };
-        continue;
-      }
-      if (!cur) continue;
-      const courtMatch = line.match(/^(?:Court (\d+): )?(.+?)\s{2}vs\s{2}(.+)$/);
-      if (courtMatch) {
-        cur.courts.push({
-          court: courtMatch[1] ? +courtMatch[1] : cur.courts.length + 1,
-          teamA: courtMatch[2].split('&').map(n => resolve(n.trim())),
-          teamB: courtMatch[3].split('&').map(n => resolve(n.trim())),
-        });
-        continue;
-      }
-      const sitMatch = line.match(/^Sit: (.+)$/);
-      if (sitMatch) cur.sitting = sitMatch[1].split(',').map(n => resolve(n.trim()));
-    }
-    if (cur) slots.push(cur);
-    return slots.length > 0 ? { schedule: slots, gamesPlayed: players.map(() => 0) } : null;
-  }, [players]);
+  const parseScheduleText = useCallback((text) => parseScheduleTextUtil(text, players), [players]);
 
   const runImport = useCallback(() => {
     const parsed = parseScheduleText(importText);
@@ -709,30 +621,10 @@ function BadmintonPlanner() {
     });
   }, [isAdmin, scores, winLoss]);
 
-  const buildCopyText = useCallback((mode) => {
-    if (!result) return '';
-    const hasMultiCourts = result.schedule.some(s => s.courts.length > 1);
-    const courtDesc = extraCourt.enabled
-      ? ` · ${numCourts} court${numCourts > 1 ? 's' : ''} +1 extra (${extraCourt.startMin}–${extraCourt.startMin + extraCourt.durationMin}m)`
-      : numCourts > 1 ? ` × ${numCourts} courts` : '';
-    const lines = [`🏸 Badminton Schedule — ${totalSlots} slots × ${gameMinutes} min${courtDesc}\n`];
-    result.schedule.forEach(s => {
-      lines.push(`--- Slot ${s.slot} (${slotTime(s.slot)}) ---`);
-      s.courts.forEach((court, ci) => {
-        const tA = court.teamA.map(p => p.name).join(' & ');
-        const tB = court.teamB.map(p => p.name).join(' & ');
-        const sc = scores[`s${s.slot}c${ci}`];
-        const scoreStr = sc?.applied ? `  [${sc.a}–${sc.b}]` : '';
-        lines.push(`  ${hasMultiCourts ? `Court ${court.court}: ` : ''}${tA}  vs  ${tB}${scoreStr}`);
-      });
-      if (mode === 'full' && s.sitting?.length > 0) lines.push(`  Sit: ${s.sitting.map(p => p.name).join(', ')}`);
-    });
-    if (mode === 'full') {
-      lines.push('\nGames per player:');
-      players.forEach((p, i) => lines.push(`  ${p.name}: ${result.gamesPlayed[i]}`));
-    }
-    return lines.join('\n');
-  }, [extraCourt, gameMinutes, numCourts, players, result, scores, slotTime, totalSlots]);
+  const buildCopyText = useCallback(
+    (mode) => buildCopyTextUtil(result, { mode, extraCourt, numCourts, gameMinutes, sessionStart, totalSlots, players, scores }),
+    [extraCourt, gameMinutes, numCourts, players, result, scores, sessionStart, totalSlots]
+  );
 
   const copySchedule = useCallback(() => {
     copyText(buildCopyText('full'), () => {
@@ -874,81 +766,16 @@ function BadmintonPlanner() {
   }, [sharedUrl]);
 
   const applySharePayload = useCallback((data: SharePayload, sourceShareId) => {
-    const { p: sharedPlayers, cfg, slots, scores: sharedScores, confirmed } = data;
-    const n = sharedPlayers.length;
-    const gp = new Array(n).fill(0);
-    const cp = new Array(n).fill(0);
-    const cr = new Array(n).fill(0);
-    const newSchedule = slots.map(slot => {
-      const playing = new Set(slot.c.flat(2));
-      for (let i = 0; i < n; i++) {
-        if (playing.has(i)) {
-          gp[i]++;
-          cp[i]++;
-          cr[i] = 0;
-        } else {
-          cr[i]++;
-          cp[i] = 0;
-        }
-      }
-      return {
-        slot: slot.s,
-        courts: slot.c.map((court, ci) => ({
-          court: ci + 1,
-          teamA: court[0].map(i => ({ name: sharedPlayers[i][0], gender: sharedPlayers[i][1] })),
-          teamB: court[1].map(i => ({ name: sharedPlayers[i][0], gender: sharedPlayers[i][1] })),
-        })),
-        sitting: slot.sit.map(i => ({ name: sharedPlayers[i][0], gender: sharedPlayers[i][1] })),
-        playerState: sharedPlayers.map(([name, gender], i) => ({
-          name,
-          gender,
-          total: gp[i],
-          conPlayed: cp[i],
-          conRested: cr[i],
-          playing: playing.has(i),
-          available: true,
-        })),
-        repeatedCourts: [],
-      };
-    });
-    const restoredScores = {};
-    newSchedule.forEach(slot => {
-      slot.courts.forEach((court, ci) => {
-        const key = `s${slot.slot}c${ci}`;
-        const sharedScore = sharedScores?.[key];
-        if (!sharedScore) return;
-        restoredScores[key] = {
-          a: sharedScore.a,
-          b: sharedScore.b,
-          applied: true,
-          teamA: court.teamA.map(player => player.name),
-          teamB: court.teamB.map(player => player.name),
-        };
-      });
-    });
-
-    const newResult = { schedule: newSchedule, gamesPlayed: [...gp] };
-
-    let nextSavedPlans = savedPlans;
-    let newLoadedPlanId = null;
-    if (sourceShareId) {
-      const existing = savedPlans.find(p => p.sourceShareId === sourceShareId);
-      if (existing) {
-        newLoadedPlanId = existing.id;
-        nextSavedPlans = savedPlans.map(p => p.id === existing.id ? { ...p, result: newResult, savedAt: new Date().toISOString() } : p);
-      } else {
-        newLoadedPlanId = Date.now();
-        nextSavedPlans = [{ id: newLoadedPlanId, tag: '', result: newResult, savedAt: new Date().toISOString(), sourceShareId }, ...savedPlans];
-      }
-    }
+    const decoded = reconstructScheduleFromSharePayload(data, { currentGameMinutes: gameMinutes, currentNumCourts: numCourts });
+    const { savedPlans: nextSavedPlans, loadedPlanId: newLoadedPlanId } = upsertSavedPlanFromShare(savedPlans, sourceShareId, decoded.result);
 
     patchState({
-      players: sharedPlayers.map(([name, gender]) => ({ name, gender, skill: 2, availFrom: 0, availTo: slots.length - 1, group: 'full', leavesAt: null })),
-      gameMinutes: cfg?.g || gameMinutes,
-      numCourts: cfg?.c || numCourts,
-      result: newResult,
-      scores: restoredScores,
-      isConfirmed: !!confirmed,
+      players: decoded.players,
+      gameMinutes: decoded.gameMinutes,
+      numCourts: decoded.numCourts,
+      result: decoded.result,
+      scores: decoded.scores,
+      isConfirmed: decoded.isConfirmed,
       loadedPlanId: newLoadedPlanId,
       savedPlans: nextSavedPlans,
     });
