@@ -26,12 +26,15 @@ describe('isValidBadmintonScore', () => {
     expect(isValidBadmintonScore(30, 29)).toBe(true);
   });
 
-  // Known gap (pre-existing, not introduced by this extraction): the deuce-win
-  // rule (`hi >= 22 && lo >= 20 && hi - lo === 2`) has no upper bound on `hi`,
-  // so scores past the real 30-point cap (e.g. 31-29) currently validate as true.
-  it('does not actually enforce the 30-point cap on the deuce rule (current behavior)', () => {
-    expect(isValidBadmintonScore(31, 29)).toBe(true);
-    expect(isValidBadmintonScore(40, 38)).toBe(true);
+  it('rejects scores past the 30-point cap, even by a valid-looking margin of 2', () => {
+    // Fixed bug: the deuce rule previously had no upper bound on `hi`, so 31-29,
+    // 40-38, etc. incorrectly validated. Only 30-29 is a valid score at the cap.
+    expect(isValidBadmintonScore(31, 29)).toBe(false);
+    expect(isValidBadmintonScore(40, 38)).toBe(false);
+  });
+
+  it('rejects 30-28 (any hi=30 score other than 30-29 is impossible under rally-point rules)', () => {
+    expect(isValidBadmintonScore(30, 28)).toBe(false);
   });
 
   it('rejects equal scores', () => {
