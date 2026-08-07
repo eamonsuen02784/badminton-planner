@@ -75,7 +75,8 @@ export default function ScheduleGrid({
             liveGames={liveGames}
             onToggleLive={onToggleLive}
             onAdjustCourts={onAdjustCourts}
-            blockedPlayerNames={slot.slot === fromSlot ? blockedPlayerNames : undefined}
+            blockedPlayerNames={(slot.slot === fromSlot || slot.slot === fromSlot + 1) ? blockedPlayerNames : undefined}
+            canShowReady={slot.slot === fromSlot + 1}
           />
         ))}
       </div>

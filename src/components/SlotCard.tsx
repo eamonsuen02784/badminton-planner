@@ -18,6 +18,7 @@ export default function SlotCard({
   onToggleLive,
   onAdjustCourts,
   blockedPlayerNames,
+  canShowReady,
 }) {
   const stepBtnStyle = { background: 'none', border: `1px solid ${C.border}`, borderRadius: 4, color: C.textMuted, fontSize: 12, fontWeight: 700, fontFamily: FONT, width: 20, height: 20, lineHeight: 1, cursor: 'pointer' };
   const slotPicker = (pos, currentName, genderByName, allNames) => {
@@ -110,13 +111,20 @@ export default function SlotCard({
 
       {!editing && slot.courts.map((court, ci) => {
         const isLive = liveGames?.some(lg => lg.slot === slot.slot && lg.court === ci);
+        // "Ready" = every player on this court is currently free (not stuck in a live
+        // game elsewhere) — only meaningful when something else actually IS live, and
+        // gated to canShowReady (the slot right after fromSlot) since fromSlot itself
+        // is ambiguous — its courts could be live, already Done, or about to start.
+        const isReady = canShowReady && !isLive && blockedPlayerNames && blockedPlayerNames.size > 0 &&
+          [...court.teamA, ...court.teamB].every(p => !blockedPlayerNames.has(p.name));
         return (
         <div key={ci} style={{ background: COURT_BG[ci], borderLeft: `3px solid ${isLive ? '#ef4444' : COURT_COLORS[ci]}`, borderRadius: 6, padding: '8px 10px', marginBottom: ci < slot.courts.length - 1 ? 6 : 0 }}>
-          {(slot.courts.length > 1 || slot.repeatedCourts?.includes(ci) || onToggleLive) && (
+          {(slot.courts.length > 1 || slot.repeatedCourts?.includes(ci) || onToggleLive || isReady) && (
             <div style={{ fontSize: 10, fontWeight: 700, marginBottom: 4, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>
               {slot.courts.length > 1 && <span style={{ color: isLive ? '#ef4444' : COURT_COLORS[ci] }}>Court {court.court}</span>}
               {slot.repeatedCourts?.includes(ci) && <span style={{ color: C.amber }}>⚠ repeat group</span>}
               {isLive && <span style={{ color: '#ef4444' }}>● LIVE</span>}
+              {isReady && <span style={{ color: C.green }} title="Everyone on this court is free to start">✓ Ready</span>}
               <div style={{ flex: 1 }} />
               {onToggleLive && (
                 <button onClick={() => onToggleLive(slot.slot, ci)} title={isLive ? 'Mark game as finished — frees players for next round' : 'Mark game as still in progress — locks players out of next round'} style={{ background: isLive ? '#ef4444' : 'none', color: isLive ? '#fff' : C.textMuted, border: `1px solid ${isLive ? '#ef4444' : C.border}`, borderRadius: 4, padding: '2px 8px', fontSize: 10, fontWeight: 700, fontFamily: FONT, cursor: 'pointer', lineHeight: 1.4 }}>

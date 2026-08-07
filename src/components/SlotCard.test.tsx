@@ -111,6 +111,45 @@ describe('SlotCard — Live/Done toggle', () => {
   });
 });
 
+describe('SlotCard — Ready indicator', () => {
+  it('shows "✓ Ready" for a court whose players are all free while something else is blocked', () => {
+    const slot = makeSlot(2);
+    // Court 1 (A1x/B1x) is fully free; someone unrelated ("Other") is the one blocked.
+    renderSlotCard(slot, { blockedPlayerNames: new Set(['Other']), canShowReady: true });
+    expect(screen.getAllByText('✓ Ready')).toHaveLength(2);
+  });
+
+  it('does not show "✓ Ready" when a player on that court is blocked', () => {
+    const slot = makeSlot(1);
+    renderSlotCard(slot, { blockedPlayerNames: new Set(['A01']), canShowReady: true });
+    expect(screen.queryByText('✓ Ready')).not.toBeInTheDocument();
+  });
+
+  it('does not show "✓ Ready" when nothing is blocked at all (empty set)', () => {
+    const slot = makeSlot(1);
+    renderSlotCard(slot, { blockedPlayerNames: new Set(), canShowReady: true });
+    expect(screen.queryByText('✓ Ready')).not.toBeInTheDocument();
+  });
+
+  it('does not show "✓ Ready" when blockedPlayerNames is not provided (slot outside the fromSlot/fromSlot+1 window)', () => {
+    const slot = makeSlot(1);
+    renderSlotCard(slot, { blockedPlayerNames: undefined, canShowReady: true });
+    expect(screen.queryByText('✓ Ready')).not.toBeInTheDocument();
+  });
+
+  it('does not show "✓ Ready" on a court that is itself already live', () => {
+    const slot = makeSlot(1);
+    renderSlotCard(slot, { blockedPlayerNames: new Set(['Other']), liveGames: [{ slot: 1, court: 0 }], canShowReady: true });
+    expect(screen.queryByText('✓ Ready')).not.toBeInTheDocument();
+  });
+
+  it('does not show "✓ Ready" on fromSlot itself, even if all players are free (avoids flagging an already-finished court)', () => {
+    const slot = makeSlot(1);
+    renderSlotCard(slot, { blockedPlayerNames: new Set(['Other']), canShowReady: false });
+    expect(screen.queryByText('✓ Ready')).not.toBeInTheDocument();
+  });
+});
+
 describe('SlotCard — empty slot', () => {
   it('shows "Not enough players" when there are no courts', () => {
     renderSlotCard(makeSlot(0));
