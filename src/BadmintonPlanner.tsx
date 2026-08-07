@@ -1,18 +1,21 @@
 // @ts-nocheck
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { generateSchedule, generateScheduleGen, extractState, recomputeStats } from './algorithm/scheduler';
 import { C, DEFAULT_PLAYERS, FONT } from './constants';
 import { usePlannerState } from './hooks/usePlannerState';
+import { useAdminAuth } from './hooks/useAdminAuth';
+import { usePlayerRoster } from './hooks/usePlayerRoster';
+import { useWinLossSync } from './hooks/useWinLossSync';
 import { pruneExpiredPlans } from './utils/pruneExpiredPlans';
-import { isValidBadmintonScore } from './utils/scoreValidation';
 import { computeCourtsPerSlot } from './utils/courtsPerSlot';
 import { applyAvailability as applyAvailabilityUtil } from './utils/availability';
 import { formatSlotTime } from './utils/slotTime';
-import { computeSkill as computeSkillUtil } from './utils/skill';
 import { parseScheduleText as parseScheduleTextUtil, buildCopyText as buildCopyTextUtil } from './utils/scheduleText';
 import { buildSharePayload as buildSharePayloadUtil, reconstructScheduleFromSharePayload, upsertSavedPlanFromShare } from './utils/sharePayload';
 import PlayerList from './components/PlayerList';
 import ScheduleGrid from './components/ScheduleGrid';
+import SessionSettingsPanel from './components/SessionSettingsPanel';
+import SessionStatusPanel from './components/SessionStatusPanel';
 import AboutTab from './components/AboutTab';
 import {
   ArchiveTab,
@@ -25,8 +28,6 @@ import {
 } from './components/PlannerModals';
 import {
   isFirebaseConfigured,
-  loadWinLoss,
-  saveWinLoss,
   createShare,
   updateShare,
   fetchShare,
@@ -52,8 +53,6 @@ function copyText(text, onCopied) {
 
 function BadmintonPlanner() {
   const { state, setField, patchState } = usePlannerState();
-  const [dbSynced, setDbSynced] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(() => !window.ADMIN_PIN || sessionStorage.getItem('bp-admin') === window.ADMIN_PIN);
   const scheduleRef = useRef(null);
 
   const {
@@ -112,6 +111,20 @@ function BadmintonPlanner() {
   const hasAppliedScores = result && Object.values(scores).some(s => s.applied);
   const allDefaultsLoaded = DEFAULT_PLAYERS.every(dp => players.some(p => p.name.toLowerCase() === dp.name.toLowerCase()));
 
+  const { isAdmin, submitPin, toggleAdminLock } = useAdminAuth({ pinInput, patchState });
+  const {
+    loadDefaults,
+    resetPlayers,
+    clearPlayers,
+    addPlayer,
+    addSelectedFromBank,
+    addToBank,
+    removeFromHistory,
+    removePlayer,
+    updatePlayer,
+  } = usePlayerRoster({ players, playerHistory, nameInput, genderInput, totalSlots, patchState });
+  const { dbSynced, computeSkill, updateScore, clearWinLoss } = useWinLossSync({ winLoss, scores, isAdmin, patchState });
+
   useEffect(() => {
     if (players.length === 0) return;
     const known = new Set(playerHistory.map(p => p.name.toLowerCase()));
@@ -126,36 +139,6 @@ function BadmintonPlanner() {
     const fresh = pruneExpiredPlans(savedPlans, Date.now());
     if (fresh.length !== savedPlans.length) patchState({ savedPlans: fresh });
   }, [savedPlans]);
-
-  useEffect(() => {
-    if (!isFirebaseConfigured()) return;
-    loadWinLoss()
-      .then(remote => {
-        patchState({
-          winLoss: (() => {
-            const merged = { ...state.winLoss };
-            for (const [name, data] of Object.entries(remote)) {
-              if (!merged[name]) merged[name] = data;
-              else {
-                merged[name] = {
-                  wins: Math.max(merged[name].wins ?? 0, data.wins ?? 0),
-                  losses: Math.max(merged[name].losses ?? 0, data.losses ?? 0),
-                };
-              }
-            }
-            return merged;
-          })(),
-        });
-        setDbSynced('synced');
-      })
-      .catch(() => setDbSynced('error'));
-  }, []);
-
-  useEffect(() => {
-    if (!isFirebaseConfigured() || !isAdmin) return;
-    setDbSynced('syncing');
-    saveWinLoss(winLoss).then(() => setDbSynced('synced')).catch(() => setDbSynced('error'));
-  }, [winLoss, isAdmin]);
 
   useEffect(() => {
     if (!result) return;
@@ -247,84 +230,6 @@ function BadmintonPlanner() {
     () => buildSharePayloadUtil({ result, playersWithAvailability: getPlayersWithAvailability(), gameMinutes, numCourts, scores, isConfirmed }),
     [gameMinutes, getPlayersWithAvailability, isConfirmed, numCourts, result, scores]
   );
-
-  const computeSkill = useCallback((name) => computeSkillUtil(name, winLoss), [winLoss]);
-
-  const loadDefaults = useCallback(() => {
-    const existing = new Set(players.map(p => p.name.toLowerCase()));
-    const toAdd = DEFAULT_PLAYERS.filter(p => !existing.has(p.name.toLowerCase()));
-    if (toAdd.length === 0) return;
-    patchState({
-      players: [
-        ...players,
-        ...toAdd.map(p => ({ ...p, availFrom: 0, availTo: totalSlots - 1, group: 'full', leavesAt: null })),
-      ],
-      result: null,
-    });
-  }, [players, totalSlots]);
-
-  const resetPlayers = useCallback(() => {
-    patchState({
-      players: DEFAULT_PLAYERS.map(p => ({ ...p, availFrom: 0, availTo: totalSlots - 1, group: 'full', leavesAt: null })),
-      result: null,
-    });
-  }, [totalSlots]);
-
-  const clearPlayers = useCallback(() => patchState({ players: [], result: null }), []);
-
-  const addPlayer = useCallback(() => {
-    const name = nameInput.trim();
-    if (!name || players.find(p => p.name.toLowerCase() === name.toLowerCase())) return;
-    patchState({
-      players: [...players, { name, gender: genderInput, skill: 2, availFrom: 0, availTo: totalSlots - 1, group: 'full', leavesAt: null }],
-      nameInput: '',
-    });
-  }, [genderInput, nameInput, players, totalSlots]);
-
-  const addSelectedFromBank = useCallback((entries) => {
-    const existing = new Set(players.map(p => p.name.toLowerCase()));
-    const toAdd = entries.filter(e => !existing.has(e.name.toLowerCase()));
-    if (toAdd.length === 0) return;
-    patchState({
-      players: [...players, ...toAdd.map(e => ({ name: e.name, gender: e.gender, skill: 2, availFrom: 0, availTo: totalSlots - 1, group: 'full', leavesAt: null }))],
-    });
-  }, [players, totalSlots]);
-
-  const addToBank = useCallback((name, gender) => {
-    const trimmed = name.trim();
-    if (!trimmed || playerHistory.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) return;
-    patchState({ playerHistory: [...playerHistory, { name: trimmed, gender }] });
-  }, [playerHistory]);
-
-  const removeFromHistory = useCallback((name) => {
-    patchState({ playerHistory: playerHistory.filter(p => p.name.toLowerCase() !== name.toLowerCase()) });
-  }, [playerHistory]);
-
-  const removePlayer = useCallback((idx) => {
-    patchState({ players: players.filter((_, i) => i !== idx), result: null });
-  }, [players]);
-
-  const updatePlayer = useCallback((idx, field, value) => {
-    patchState({
-      players: players.map((p, i) => i === idx ? { ...p, [field]: value } : p),
-      result: null,
-    });
-  }, [players]);
-
-  const submitPin = useCallback(() => {
-    if (pinInput === window.ADMIN_PIN) {
-      sessionStorage.setItem('bp-admin', pinInput);
-      setIsAdmin(true);
-      patchState({ showPinPrompt: false, pinInput: '', pinError: false });
-    } else {
-      patchState({ pinError: true });
-    }
-  }, [pinInput]);
-
-  const clearWinLoss = useCallback(() => {
-    patchState({ winLoss: {} });
-    if (isFirebaseConfigured() && isAdmin) saveWinLoss({});
-  }, [isAdmin]);
 
   const parseScheduleText = useCallback((text) => parseScheduleTextUtil(text, players), [players]);
 
@@ -593,34 +498,6 @@ function BadmintonPlanner() {
     patchState({ result: { schedule: newSchedule, gamesPlayed }, editingSlot: null, editLayout: null, copied: false });
   }, [editingSlot, editLayout, players, result]);
 
-  const updateScore = useCallback((slot, courtIdx, aVal, bVal, teamA, teamB) => {
-    if (!isAdmin) return;
-    const key = `s${slot}c${courtIdx}`;
-    const aNum = parseInt(aVal);
-    const bNum = parseInt(bVal);
-    const valid = !isNaN(aNum) && !isNaN(bNum) && isValidBadmintonScore(aNum, bNum);
-    const prevEntry = scores[key];
-    const nextWinLoss = JSON.parse(JSON.stringify(winLoss));
-    if (prevEntry?.applied) {
-      const pA = parseInt(prevEntry.a);
-      const pB = parseInt(prevEntry.b);
-      const winners = pA > pB ? prevEntry.teamA : prevEntry.teamB;
-      const losers = pA > pB ? prevEntry.teamB : prevEntry.teamA;
-      winners.forEach(name => { if (nextWinLoss[name]) nextWinLoss[name].wins = Math.max(0, nextWinLoss[name].wins - 1); });
-      losers.forEach(name => { if (nextWinLoss[name]) nextWinLoss[name].losses = Math.max(0, nextWinLoss[name].losses - 1); });
-    }
-    if (valid) {
-      const winners = aNum > bNum ? teamA : teamB;
-      const losers = aNum > bNum ? teamB : teamA;
-      winners.forEach(name => { nextWinLoss[name] = { wins: (nextWinLoss[name]?.wins ?? 0) + 1, losses: nextWinLoss[name]?.losses ?? 0 }; });
-      losers.forEach(name => { nextWinLoss[name] = { wins: nextWinLoss[name]?.wins ?? 0, losses: (nextWinLoss[name]?.losses ?? 0) + 1 }; });
-    }
-    patchState({
-      scores: { ...scores, [key]: { a: aVal, b: bVal, applied: valid, teamA, teamB } },
-      winLoss: nextWinLoss,
-    });
-  }, [isAdmin, scores, winLoss]);
-
   const buildCopyText = useCallback(
     (mode) => buildCopyTextUtil(result, { mode, extraCourt, numCourts, gameMinutes, sessionStart, totalSlots, players, scores }),
     [extraCourt, gameMinutes, numCourts, players, result, scores, sessionStart, totalSlots]
@@ -809,7 +686,7 @@ function BadmintonPlanner() {
           <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
             {isFirebaseConfigured() && <span title={dbSynced === 'synced' ? 'Win-loss synced to cloud' : dbSynced === 'syncing' ? 'Syncing…' : dbSynced === 'error' ? 'Sync failed' : 'Cloud sync ready'} style={{ fontSize: 13, color: dbSynced === 'synced' ? C.green : dbSynced === 'error' ? '#ef4444' : C.textMuted }}>{dbSynced === 'synced' ? '☁ Synced' : dbSynced === 'syncing' ? '⟳' : dbSynced === 'error' ? '☁ ✗' : '☁'}</span>}
             {window.ADMIN_PIN && (
-              <button onClick={() => isAdmin ? (sessionStorage.removeItem('bp-admin'), setIsAdmin(false)) : patchState({ showPinPrompt: true })} title={isAdmin ? 'Click to lock score entry' : 'Click to unlock score entry'} style={{ background: isAdmin ? C.accentDim : C.card, color: isAdmin ? '#fff' : C.textMuted, border: `1px solid ${isAdmin ? 'transparent' : C.border}`, borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 700, fontFamily: FONT }}>
+              <button onClick={toggleAdminLock} title={isAdmin ? 'Click to lock score entry' : 'Click to unlock score entry'} style={{ background: isAdmin ? C.accentDim : C.card, color: isAdmin ? '#fff' : C.textMuted, border: `1px solid ${isAdmin ? 'transparent' : C.border}`, borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 700, fontFamily: FONT }}>
                 {isAdmin ? '🔓 Admin' : '🔒 Lock'}
               </button>
             )}
@@ -844,81 +721,16 @@ function BadmintonPlanner() {
 
         {activeTab === 'schedule' && (
         <>
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 20, boxShadow: C.shadow }}>
-        <h3 style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, margin: '0 0 14px' }}>Session</h3>
-        <div className="settings-row" style={{ marginBottom: 0 }}>
-          <div style={{ flex: '0 0 auto' }}>
-            <label style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Start time</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-              <input type="time" value={sessionStart} onChange={e => patchState({ sessionStart: e.target.value })} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 8px', color: sessionStart ? C.text : C.textMuted, fontSize: 13, fontFamily: FONT }} />
-              {sessionStart && <button onClick={() => patchState({ sessionStart: '' })} style={{ background: 'none', border: 'none', color: C.textMuted, fontSize: 15, padding: 0, lineHeight: 1 }}>×</button>}
-            </div>
-          </div>
-          <div style={{ flex: '1 1 180px' }}>
-            <label style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Session length</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-              <input type="range" min={60} max={240} step={gameMinutes} value={totalMinutes} onChange={e => patchState({ totalMinutes: +e.target.value })} style={{ flex: 1, accentColor: C.accent }} />
-              <span style={{ fontSize: 14, color: C.accent, fontWeight: 600, minWidth: 48, textAlign: 'right' }}>{Math.floor(totalMinutes / 60)}h{totalMinutes % 60 ? `${totalMinutes % 60}m` : ''}</span>
-            </div>
-          </div>
-          <div style={{ flex: '1 1 180px' }}>
-            <label style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Game length</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-              <input type="range" min={8} max={20} value={gameMinutes} onChange={e => patchState({ gameMinutes: +e.target.value })} style={{ flex: 1, accentColor: C.accent }} />
-              <span style={{ fontSize: 14, color: C.accent, fontWeight: 600, minWidth: 48, textAlign: 'right' }}>{gameMinutes}m</span>
-            </div>
-          </div>
-          <div style={{ flex: '0 0 auto' }}>
-            <label style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Courts</label>
-            <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-              {[1, 2, 3, 4].map(nc => (
-                <button key={nc} onClick={() => patchState({ numCourts: nc })} style={{ background: numCourts === nc ? C.accentDim : C.card, color: numCourts === nc ? '#fff' : C.textDim, border: `1px solid ${numCourts === nc ? C.accentDim : C.border}`, borderRadius: 6, padding: '8px 14px', fontSize: 14, fontWeight: 600, fontFamily: FONT }}>
-                  {nc}
-                </button>
-              ))}
-            </div>
-          </div>
-          {numCourts < 4 && (
-            <div style={{ flex: '0 0 auto' }}>
-              <label style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Extra court</label>
-              <div style={{ display: 'flex', gap: 4, marginTop: 4, alignItems: 'center' }}>
-                <button onClick={() => patchState({ extraCourt: { ...extraCourt, enabled: !extraCourt.enabled } })} style={{ background: extraCourt.enabled ? C.accentDim : C.card, color: extraCourt.enabled ? '#fff' : C.textDim, border: `1px solid ${extraCourt.enabled ? C.accentDim : C.border}`, borderRadius: 6, padding: '8px 14px', fontSize: 13, fontWeight: 600, fontFamily: FONT }}>
-                  {extraCourt.enabled ? 'ON' : 'OFF'}
-                </button>
-                {extraCourt.enabled && (
-                  <>
-                    <span style={{ fontSize: 11, color: C.textDim }}>@</span>
-                    <input type="number" min={0} max={totalMinutes - gameMinutes} step={gameMinutes} value={extraCourt.startMin} onChange={e => patchState({ extraCourt: { ...extraCourt, startMin: +e.target.value } })} style={{ width: 44, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: '5px 6px', color: C.text, fontSize: 12, fontFamily: FONT, textAlign: 'center' }} />
-                    <span style={{ fontSize: 11, color: C.textDim }}>m for</span>
-                    <input type="number" min={gameMinutes} max={totalMinutes} step={gameMinutes} value={extraCourt.durationMin} onChange={e => patchState({ extraCourt: { ...extraCourt, durationMin: +e.target.value } })} style={{ width: 44, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: '5px 6px', color: C.text, fontSize: 12, fontFamily: FONT, textAlign: 'center' }} />
-                    <span style={{ fontSize: 11, color: C.textDim }}>m</span>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-          <div style={{ flex: '1 1 200px' }}>
-            <label style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Availability</label>
-            <div className="avail-buttons" style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-              {[['none', 'All here'], ['group', 'Early / Late'], ['custom', 'Per player']].map(([val, label]) => (
-                <button key={val} onClick={() => patchState({ staggerMode: val })} style={{ background: staggerMode === val ? C.accentDim : C.card, color: staggerMode === val ? '#fff' : C.textDim, border: `1px solid ${staggerMode === val ? C.accentDim : C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 12, fontWeight: 600, fontFamily: FONT, flex: 1 }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div style={{ flex: '0 0 auto' }}>
-            <label style={{ fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Mixed teams</label>
-            <div style={{ marginTop: 4 }}>
-              <button onClick={() => patchState({ preferMixedTeams: !preferMixedTeams })}
-                title={preferMixedTeams ? 'Each game has 1F+1M per side (2F per court)' : 'Females spread evenly across courts (1F per court when outnumbered)'}
-                style={{ background: preferMixedTeams ? C.pinkDim : C.card, color: preferMixedTeams ? '#fff' : C.textDim, border: `1px solid ${preferMixedTeams ? C.pinkDim : C.border}`, borderRadius: 6, padding: '8px 14px', fontSize: 13, fontWeight: 600, fontFamily: FONT }}>
-                {preferMixedTeams ? '1F+1M / side' : 'Spread F'}
-              </button>
-            </div>
-          </div>
-        </div>
-        </div>
+        <SessionSettingsPanel
+          sessionStart={sessionStart}
+          totalMinutes={totalMinutes}
+          gameMinutes={gameMinutes}
+          numCourts={numCourts}
+          extraCourt={extraCourt}
+          staggerMode={staggerMode}
+          preferMixedTeams={preferMixedTeams}
+          patchState={patchState}
+        />
 
         <PlayerList
           players={players}
@@ -1001,34 +813,15 @@ function BadmintonPlanner() {
         {saved && <p style={{ fontSize: 12, color: C.green, textAlign: 'center', marginTop: -16, marginBottom: 16 }}>Schedule saved — will persist on refresh</p>}
 
         {result && (fromSlot > 1 || liveGames.length > 0) && (
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
-            <div style={{ fontSize: 11, color: C.textDim, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
-              Session Status · round {fromSlot - 1} done · next: {Math.min(fromSlot, totalSlots)}
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {players.map((p, idx) => {
-                const nextSlotIdx = fromSlot - 1; // 0-based index of next upcoming slot
-                const departed = p.leavesAt != null && p.leavesAt < nextSlotIdx;
-                const notArrived = staggerMode === 'custom' && p.availFrom != null && p.availFrom > nextSlotIdx;
-                const leavingScheduled = p.leavesAt != null && !departed;
-                const isHere = !departed && !notArrived;
-                return (
-                  <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 4, background: (departed || notArrived) ? 'rgba(100,116,139,0.06)' : 'rgba(125,211,252,0.06)', border: `1px solid ${(departed || notArrived) ? C.border : C.accentDim + '55'}`, borderRadius: 6, padding: '3px 8px', opacity: (departed || notArrived) ? 0.6 : 1 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: p.gender === 'F' ? C.pink : (isHere ? C.text : C.textMuted) }}>{p.name}</span>
-                    {(departed || leavingScheduled) && (
-                      <button onClick={() => setPlayerBack(idx)} title="Restore player to session" style={{ background: 'none', border: 'none', color: C.textMuted, fontSize: 13, padding: '0 2px', cursor: 'pointer', fontFamily: FONT, lineHeight: 1 }}>↩</button>
-                    )}
-                    {notArrived && (
-                      <button onClick={() => setPlayerJoining(idx)} title="Player is here — add to upcoming round" style={{ background: 'none', border: `1px solid ${C.accentDim}`, color: C.accent, fontSize: 10, padding: '1px 6px', borderRadius: 4, cursor: 'pointer', fontFamily: FONT, fontWeight: 700 }}>Here now</button>
-                    )}
-                    {isHere && !leavingScheduled && (
-                      <button onClick={() => setPlayerLeaving(idx)} title="Player is done for today" style={{ background: 'none', border: 'none', color: C.textMuted, fontSize: 13, padding: '0 2px', cursor: 'pointer', fontFamily: FONT, lineHeight: 1 }}>↗</button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <SessionStatusPanel
+            players={players}
+            fromSlot={fromSlot}
+            totalSlots={totalSlots}
+            staggerMode={staggerMode}
+            setPlayerBack={setPlayerBack}
+            setPlayerJoining={setPlayerJoining}
+            setPlayerLeaving={setPlayerLeaving}
+          />
         )}
 
         {result && (
